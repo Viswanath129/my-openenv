@@ -710,7 +710,7 @@ export default function App() {
               <form onSubmit={addAccount} className="space-y-5">
                 <div>
                   <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Gmail Address</label>
-                  <input required type="email" value={newEmail} onChange={(e) => setNewEmail(e.target.value)} className="w-full px-5 py-3.5 bg-slate-50 border-2 border-transparent rounded-2xl focus:bg-white focus:border-indigo-500 outline-none transition-all font-bold" placeholder="you@gmail.com" />
+                  <input required type="text" value={newEmail} onChange={(e) => setNewEmail(e.target.value)} className="w-full px-5 py-3.5 bg-slate-50 border-2 border-transparent rounded-2xl focus:bg-white focus:border-indigo-500 outline-none transition-all font-bold" placeholder="you@gmail.com or demo" />
                 </div>
                 <div>
                   <div className="flex justify-between items-center mb-2">
@@ -720,10 +720,21 @@ export default function App() {
                   <input required type="password" value={newPass} onChange={(e) => setNewPass(e.target.value)} className="w-full px-5 py-3.5 bg-slate-50 border-2 border-transparent rounded-2xl focus:bg-white focus:border-indigo-500 outline-none transition-all font-bold" placeholder="xxxx xxxx xxxx xxxx" />
                   {errMessage && <p className="text-[10px] text-red-500 mt-2 font-bold flex items-center gap-1"><AlertTriangle size={10} /> {errMessage}</p>}
                 </div>
-                <button disabled={isConnecting} className={`w-full text-white font-black py-4 rounded-2xl shadow-xl transition-all flex items-center justify-center gap-3 ${isConnecting ? 'bg-slate-400' : 'bg-gradient-to-r from-indigo-600 to-violet-600'}`}>
-                  {isConnecting && <div className="h-4 w-4 border-2 border-white border-t-transparent rounded-full animate-spin" />}
-                  {isConnecting ? 'Validating...' : 'Connect Account'}
-                </button>
+                
+                <div className="flex gap-3">
+                  <button onClick={(e) => {
+                    e.preventDefault();
+                    setNewEmail('demo');
+                    setNewPass('demo');
+                    setTimeout(() => document.getElementById('connect-btn').click(), 10);
+                  }} className="flex-1 py-4 bg-slate-100 text-slate-600 font-black rounded-2xl hover:bg-slate-200 transition-all text-sm">
+                    Try Demo
+                  </button>
+                  <button id="connect-btn" disabled={isConnecting} className={`flex-[2] text-white font-black py-4 rounded-2xl shadow-xl transition-all flex items-center justify-center gap-3 ${isConnecting ? 'bg-slate-400' : 'bg-gradient-to-r from-indigo-600 to-violet-600'}`}>
+                    {isConnecting && <div className="h-4 w-4 border-2 border-white border-t-transparent rounded-full animate-spin" />}
+                    {isConnecting ? 'Validating...' : 'Connect Account'}
+                  </button>
+                </div>
               </form>
             </div>
           </div>
