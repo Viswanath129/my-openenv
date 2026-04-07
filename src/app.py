@@ -78,9 +78,22 @@ class FeedbackRequest(BaseModel):
 # --- Routes ---
 
 
-@app.get("/")
-def root():
-    return RedirectResponse(url="/docs")
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import RedirectResponse, FileResponse
+import os
+
+frontend_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "frontend", "dist")
+
+if os.path.isdir(frontend_path):
+    app.mount("/assets", StaticFiles(directory=os.path.join(frontend_path, "assets")), name="assets")
+    
+    @app.get("/")
+    def serve_frontend():
+        return FileResponse(os.path.join(frontend_path, "index.html"))
+else:
+    @app.get("/")
+    def root():
+        return RedirectResponse(url="/docs")
 
 
 @app.post("/accounts")
