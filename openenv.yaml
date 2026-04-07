@@ -1,0 +1,49 @@
+name: email_triage_env
+description: "TriageAI - RL environment for intelligent email inbox triage with ML-powered spam classification"
+version: "3.0"
+port: 8000
+app: src.app:app
+
+tasks:
+  - id: task1
+    name: "Single Email Triage"
+    description: "Triage a single email correctly. Tests basic action selection."
+    difficulty: easy
+    max_steps: 5
+
+  - id: task2
+    name: "Backlog Processing"
+    description: "Process a backlog of 3 emails with mixed types. Tests prioritization."
+    difficulty: medium
+    max_steps: 10
+
+  - id: task3
+    name: "Dynamic Inbox Stream"
+    description: "Handle 5 initial emails with continuous arrivals. Tests real-time triage under pressure."
+    difficulty: hard
+    max_steps: 20
+
+actions:
+  type: object
+  properties:
+    action_type:
+      type: string
+      enum: ["open", "delete", "defer", "escalate"]
+    email_id:
+      type: string
+
+observations:
+  type: object
+  properties:
+    inbox:
+      type: array
+      description: "List of email objects with type, urgency, sentiment, wait metadata"
+    steps:
+      type: integer
+    task:
+      type: string
+
+grader:
+  type: normalized
+  range: [0.0, 1.0]
+  description: "Episode score normalized against optimal theoretical reward per task"
