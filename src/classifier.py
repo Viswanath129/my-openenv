@@ -1,5 +1,5 @@
 """
-TriageAI Email Classifier v3.0
+InboxIQ Email Classifier v3.0
 - TF-IDF + Multinomial Naive Bayes for spam/ham classification
 - Keyword + heuristic sentiment analysis
 - Urgency detection from content signals

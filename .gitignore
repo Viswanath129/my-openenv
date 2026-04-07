@@ -1,7 +1,24 @@
+# Python
 .venv/
 __pycache__/
-.ruff_cache/
-output.log
 *.pyc
+*.egg-info/
+dist/
+build/
+
+# Tools
+.ruff_cache/
+.DS_Store
+
+# Secrets
 .env
+
+# Logs & temp
+output.log
 nul
+push_error.txt
+
+# Node
+node_modules/
+frontend/node_modules/
+frontend/dist/

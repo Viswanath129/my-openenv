@@ -1,3 +1,8 @@
+# ──────────────────────────────────────────────
+# InboxIQ — Dockerfile for Hugging Face Spaces
+# OpenEnv-compliant containerized RL environment
+# ──────────────────────────────────────────────
+
 # --- Frontend Build Stage ---
 FROM node:20-alpine AS frontend-builder
 WORKDIR /frontend
@@ -17,6 +22,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy environment code
 COPY src/ /app/src/
 COPY openenv.yaml /app/openenv.yaml
+COPY InboxIQ.png /app/InboxIQ.png
+COPY inference.py /app/inference.py
 
 # Copy dataset into the container
 COPY dataset/ /app/dataset/
@@ -31,4 +38,5 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=10s --retries=3 \
   CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/state')" || exit 1
 
+# Run the server
 CMD ["uvicorn", "src.app:app", "--host", "0.0.0.0", "--port", "8000"]

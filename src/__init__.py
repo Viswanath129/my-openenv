@@ -1,1 +1,1 @@
-# TriageAI Email RL Environment
+"""InboxIQ — Intelligent Email Triage RL Environment"""

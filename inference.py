@@ -1,25 +1,27 @@
 """
-TriageAI Inference Script — OpenEnv Competition
-Uses OpenAI-compatible client for LLM-based action selection.
-Emits structured [START], [STEP], [END] logs per spec.
+InboxIQ Inference Script — OpenEnv Hackathon
+Uses OpenAI-compatible client via Hugging Face Router.
+Emits structured [START], [STEP], [END] logs per OpenEnv spec.
+
+Usage:
+    HF_TOKEN=hf_xxx python inference.py
+    ENV_URL=http://localhost:8000 python inference.py
 """
 
 import os
-import sys
 import json
-import asyncio
 from typing import List, Optional
 
 from openai import OpenAI
 
-# --- Required environment variables ---
-API_BASE_URL = os.environ.get("API_BASE_URL", "https://api.openai.com/v1")
-MODEL_NAME = os.environ.get("MODEL_NAME", "gpt-4o-mini")
-API_KEY = os.environ.get("HF_TOKEN", os.environ.get("OPENAI_API_KEY", ""))
+# ── Required environment variables ──
+API_BASE_URL = os.getenv("API_BASE_URL", "https://router.huggingface.co/v1")
+MODEL_NAME = os.getenv("MODEL_NAME", "Qwen/Qwen2.5-72B-Instruct")
+HF_TOKEN = os.getenv("HF_TOKEN")
 
-# --- Environment config ---
+# ── Environment config ──
 ENV_URL = os.environ.get("ENV_URL", "http://localhost:8000")
-BENCHMARK = "email_triage_env"
+BENCHMARK = "InboxIQ"
 
 TASKS = [
     {"id": "task1", "max_steps": 5},
@@ -28,7 +30,10 @@ TASKS = [
 ]
 
 
-# --- Structured logging per spec ---
+# ══════════════════════════════════════
+# Structured logging per OpenEnv spec
+# ══════════════════════════════════════
+
 def log_start(task: str, env: str, model: str):
     print(f"[START] task={task} env={env} model={model}", flush=True)
 
@@ -49,7 +54,10 @@ def log_end(success: bool, steps: int, score: float, rewards: List[float]):
     )
 
 
-# --- LLM-based action selection ---
+# ══════════════════════════════════════
+# LLM-based action selection
+# ══════════════════════════════════════
+
 def get_action_from_llm(
     client: OpenAI, inbox: list, step: int, history: list
 ) -> dict:
@@ -66,7 +74,7 @@ def get_action_from_llm(
 
     history_desc = "\n".join(history[-5:]) if history else "None yet."
 
-    prompt = f"""You are an email triage agent. Your goal is to maximize reward by choosing the best action for each email.
+    prompt = f"""You are an email triage agent for InboxIQ. Your goal is to maximize reward by choosing the best action for each email.
 
 CURRENT INBOX (step {step}):
 {inbox_desc}
@@ -94,14 +102,12 @@ Choose the single best action right now."""
             temperature=0.1,
         )
         content = response.choices[0].message.content.strip()
-        # Parse JSON from response
         if "{" in content:
             json_str = content[content.index("{") : content.rindex("}") + 1]
             return json.loads(json_str)
     except Exception as exc:
         print(f"[DEBUG] LLM request failed: {exc}", flush=True)
 
-    # Fallback: heuristic policy
     return fallback_policy(inbox)
 
 
@@ -110,7 +116,6 @@ def fallback_policy(inbox: list) -> dict:
     if not inbox:
         return {"action_type": "defer", "email_id": "none"}
 
-    # Sort: spam first, then urgent, then oldest
     sorted_inbox = sorted(
         inbox,
         key=lambda e: (
@@ -142,7 +147,10 @@ def fallback_policy(inbox: list) -> dict:
     return {"action_type": action, "email_id": target["id"]}
 
 
-# --- HTTP helpers ---
+# ══════════════════════════════════════
+# HTTP helpers
+# ══════════════════════════════════════
+
 import urllib.request
 import urllib.error
 
@@ -162,9 +170,19 @@ def http_get(url: str) -> dict:
         return json.loads(resp.read())
 
 
-# --- Main ---
+# ══════════════════════════════════════
+# Main
+# ══════════════════════════════════════
+
 def main():
-    client = OpenAI(base_url=API_BASE_URL, api_key=API_KEY) if API_KEY else None
+    print("=" * 60)
+    print("  InboxIQ — OpenEnv Inference Benchmark")
+    print("=" * 60)
+
+    client = OpenAI(base_url=API_BASE_URL, api_key=HF_TOKEN) if HF_TOKEN else None
+
+    if not client:
+        print("[INFO] No HF_TOKEN set — using heuristic fallback policy.")
 
     for task_cfg in TASKS:
         task_id = task_cfg["id"]
@@ -178,7 +196,6 @@ def main():
         success = True
 
         try:
-            # Reset environment
             obs = http_post(f"{ENV_URL}/reset?task={task_id}")
 
             for step in range(1, max_steps + 1):
@@ -186,13 +203,11 @@ def main():
                 if not inbox and step > 1:
                     break
 
-                # Get action from LLM or fallback
-                if client and API_KEY:
+                if client and HF_TOKEN:
                     action = get_action_from_llm(client, inbox, step, history)
                 else:
                     action = fallback_policy(inbox)
 
-                # Step the environment
                 result = http_post(f"{ENV_URL}/step", data=action)
 
                 obs = result.get("observation", result)
@@ -223,6 +238,8 @@ def main():
         score = min(max(score, 0.0), 1.0)
         log_end(success=success, steps=steps_taken, score=score, rewards=rewards)
         print("-" * 50)
+
+    print("\n✅ InboxIQ inference benchmark complete.")
 
 
 if __name__ == "__main__":

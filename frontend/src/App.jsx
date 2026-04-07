@@ -336,7 +336,7 @@ export default function App() {
                 <Zap size={20} fill="currentColor" />
               </div>
               <div>
-                <h1 className="font-black text-xl tracking-tight text-slate-800">TriageAI</h1>
+                <h1 className="font-black text-xl tracking-tight text-slate-800">InboxIQ</h1>
                 <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
                   RL Engine v3.0
                 </p>

@@ -1,25 +1,30 @@
-name: email_triage_env
-description: "TriageAI - RL environment for intelligent email inbox triage with ML-powered spam classification"
+name: InboxIQ
+description: "InboxIQ — OpenEnv-compliant RL environment for intelligent email inbox triage with ML-powered spam classification, sentiment analysis, and urgency detection. Simulates real-world email management as a sequential decision-making problem."
 version: "3.0"
 port: 8000
 app: src.app:app
+tags:
+  - openenv
+  - reinforcement-learning
+  - email-triage
+  - real-world-task
 
 tasks:
   - id: task1
     name: "Single Email Triage"
-    description: "Triage a single email correctly. Tests basic action selection."
+    description: "Triage a single email correctly. Tests basic action selection — classify spam vs legitimate and choose the optimal action."
     difficulty: easy
     max_steps: 5
 
   - id: task2
     name: "Backlog Processing"
-    description: "Process a backlog of 3 emails with mixed types. Tests prioritization."
+    description: "Process a backlog of 3 emails with mixed types (spam, work, support). Tests prioritization and batch decision-making."
     difficulty: medium
     max_steps: 10
 
   - id: task3
     name: "Dynamic Inbox Stream"
-    description: "Handle 5 initial emails with continuous arrivals. Tests real-time triage under pressure."
+    description: "Handle 5 initial emails with continuous random arrivals. Tests real-time triage under time pressure and evolving state."
     difficulty: hard
     max_steps: 20
 
@@ -29,21 +34,31 @@ actions:
     action_type:
       type: string
       enum: ["open", "delete", "defer", "escalate"]
+      description: "The triage action to perform on the target email"
     email_id:
       type: string
+      description: "The unique identifier of the email to act upon"
 
 observations:
   type: object
   properties:
     inbox:
       type: array
-      description: "List of email objects with type, urgency, sentiment, wait metadata"
+      description: "List of email objects with fields: id, sender, subject, type, urgency, sentiment, sentiment_confidence, spam_score, confidence, wait"
     steps:
       type: integer
+      description: "Current step number in the episode"
     task:
       type: string
+      description: "Current task identifier"
+    max_steps:
+      type: integer
+      description: "Maximum allowed steps for this task"
+    total_reward:
+      type: number
+      description: "Cumulative reward so far in the episode"
 
 grader:
   type: normalized
   range: [0.0, 1.0]
-  description: "Episode score normalized against optimal theoretical reward per task"
+  description: "Episode score normalized against optimal theoretical reward per task. Deterministic given identical episode trajectory."
