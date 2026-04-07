@@ -173,29 +173,29 @@ class EmailEnv:
         # ── Core spam/ham reward ──
         if is_spam:
             if action_type == "delete":
-                reward += 2.0 * confidence_multiplier
+                reward += 4.0 * confidence_multiplier
             else:
-                reward -= 2.5 * confidence_multiplier
+                reward -= 5.0 * confidence_multiplier
         else:
             if action_type in ["open", "escalate"]:
-                reward += 1.0 * confidence_multiplier
+                reward += 2.0 * confidence_multiplier
             elif action_type == "delete":
-                reward -= 3.0  # Critical error — deleting real email
+                reward -= 6.0  # Critical error — deleting real email
 
         # ── Sentiment bonus ──
         if email.get("sentiment") == "Aggressive" and action_type == "escalate":
-            reward += 1.5
+            reward += 3.0
         elif email.get("sentiment") == "Aggressive" and action_type not in ["escalate", "open"]:
-            reward -= 1.0
+            reward -= 2.0
 
         # ── Urgency bonus ──
         if email.get("urgency") == "HIGH" and action_type in ["open", "escalate"]:
-            reward += 0.5
+            reward += 1.0
         elif email.get("urgency") == "HIGH" and action_type == "defer":
-            reward -= 1.0
+            reward -= 2.0
 
         # ── Wait penalty (capped) ──
-        wait_penalty = min(0.1 * email.get("wait", 0), 2.0)
+        wait_penalty = min(0.2 * email.get("wait", 0), 4.0)
         reward -= wait_penalty
 
         self.classifier.record_reward(reward)
@@ -210,7 +210,7 @@ class EmailEnv:
         email_id = action.get("email_id")
 
         target_email = next((e for e in self.inbox if e["id"] == email_id), None)
-        step_reward = -0.05  # Small cost per step (penalizes infinite loops)
+        step_reward = -0.1  # Small cost per step (penalizes infinite loops)
 
         if target_email:
             step_reward += self.complex_grader(target_email, action_type)
@@ -231,6 +231,12 @@ class EmailEnv:
         self._episode_rewards.append(step_reward)
         self.steps += 1
         done = self.steps >= self.max_steps or (len(self.inbox) == 0 and self.steps > 1)
+
+        # ── Completion Bonus ──
+        if done and len(self.inbox) == 0:
+            bonus = 10.0
+            step_reward += bonus
+            self.total_reward += bonus
 
         info = {
             "total": round(self.total_reward, 2),

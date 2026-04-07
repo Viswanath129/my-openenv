@@ -234,13 +234,13 @@ export default function App() {
         [
           {
             msg: logMsg,
-            reward,
+            reward: Math.round(reward * 100) / 100,
             action: actionType,
             type,
             time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
           },
           ...prev,
-        ].slice(0, 12)
+        ].slice(0, 8)
       );
 
       if (type === 'SPAM' && actionType === 'DELETE') {
@@ -328,9 +328,9 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-[#F8FAFC] text-slate-900 font-sans selection:bg-indigo-100 selection:text-indigo-700">
-      <div className="max-w-[1600px] mx-auto p-4 md:p-6 lg:p-8 grid grid-cols-1 lg:grid-cols-12 gap-6 lg:h-screen lg:overflow-hidden min-h-screen">
-        <aside className="lg:col-span-3 flex flex-col gap-5 lg:overflow-y-auto pr-2 lg:pb-8">
-          <div className="bg-white p-6 rounded-3xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-slate-100">
+      <div className="max-w-[1600px] mx-auto p-3 sm:p-6 lg:p-8 flex flex-col lg:grid lg:grid-cols-12 gap-5 lg:h-screen lg:overflow-hidden min-h-screen">
+        <aside className="lg:col-span-3 flex flex-col gap-4 lg:overflow-y-auto pr-0 lg:pr-2 lg:pb-8">
+          <div className="bg-white p-5 rounded-3xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-slate-100">
             <div className="flex items-center gap-3 mb-6">
               <div className="w-11 h-11 bg-gradient-to-br from-indigo-600 to-violet-600 rounded-xl flex items-center justify-center text-white shadow-lg shadow-indigo-200">
                 <Zap size={20} fill="currentColor" />
@@ -505,17 +505,17 @@ export default function App() {
               <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">
                 Total Rewards
               </p>
-              <div className="flex items-baseline gap-2">
-                <span className={`text-3xl font-black ${score >= 0 ? 'text-slate-800' : 'text-red-600'}`}>
-                  {score}
+              <div className="flex items-baseline gap-2 overflow-hidden">
+                <span className={`text-2xl sm:text-3xl font-black truncate ${score >= 0 ? 'text-slate-800' : 'text-red-600'}`}>
+                  {typeof score === 'number' ? score.toFixed(2) : score}
                 </span>
                 {lastReward && (
                   <span
                     key={lastReward.timestamp}
-                    className={`text-xs font-bold animate-bounce ${lastReward.value >= 0 ? 'text-emerald-500' : 'text-red-500'}`}
+                    className={`text-[10px] sm:text-xs font-bold animate-bounce ${lastReward.value >= 0 ? 'text-emerald-500' : 'text-red-500'}`}
                   >
                     {lastReward.value > 0 ? '+' : ''}
-                    {lastReward.value}
+                    {lastReward.value.toFixed(1)}
                   </span>
                 )}
               </div>
@@ -688,7 +688,7 @@ export default function App() {
                     </div>
                   </div>
                   <span className={`text-xs font-black shrink-0 ml-2 ${log.reward >= 0 ? 'text-emerald-500' : 'text-red-500'}`}>
-                    {log.reward > 0 ? '+' : ''}{log.reward}
+                    {log.reward > 0 ? '+' : ''}{log.reward.toFixed(2)}
                   </span>
                 </div>
               ))}
