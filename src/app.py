@@ -172,8 +172,16 @@ def list_accounts():
 @app.post("/accounts")
 def add_account(req: AccountRequest):
     """Validate and connect a new IMAP account."""
+    # ── Demo Mode Bypass ──
+    if req.username.lower() in ["demo", "demo@inbox-iq.ai"]:
+        connected_accounts[req.username] = "demo-pass"
+        return {"status": "connected", "username": req.username, "is_demo": True}
+
     success, msg = validate_credentials(req.username, req.password)
     if not success:
+        # Provide helpful hint for HF Network unreachable error
+        if "Network is unreachable" in msg:
+            msg += " (Hugging Face firewall may be blocking port 993. Try username 'demo' to test the simulation mode.)"
         raise HTTPException(status_code=400, detail=msg)
     
     connected_accounts[req.username] = req.password
@@ -184,8 +192,18 @@ def add_account(req: AccountRequest):
 def get_live_inbox():
     """Fetch recent emails from all accounts and classify them."""
     all_emails = []
+    import time
     for user, pwd in connected_accounts.items():
-        raw_emails = fetch_live_emails(user, pwd)
+        if pwd == "demo-pass":
+            # ── Simulated 'Live' Inbox for Demo Mode ──
+            raw_emails = [
+                {"id": "demo-1", "sender": "promo@deal-hub.com", "subject": "URGENT: Your free claim prize inside!", "createdAt": int(time.time() * 1000) - 300000},
+                {"id": "demo-2", "sender": "manager@company.tech", "subject": "Q4 Strategy Update & Feedback Requested", "createdAt": int(time.time() * 1000) - 900000},
+                {"id": "demo-3", "sender": "support@cloud-platform.io", "subject": "CRITICAL: Service degradation report — ticket #4512", "createdAt": int(time.time() * 1000) - 1500000},
+            ]
+        else:
+            raw_emails = fetch_live_emails(user, pwd)
+        
         for email_data in raw_emails:
             # Classify using the ML pipeline
             classification = live_classifier.classify(email_data["subject"])
