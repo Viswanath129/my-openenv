@@ -12,6 +12,23 @@ import time
 import datetime
 
 
+def validate_credentials(username: str, password: str) -> tuple[bool, str]:
+    """Validate IMAP credentials without fetching emails."""
+    password = password.replace(" ", "")
+    if not password or len(password) < 8:
+        return False, "Password too short."
+
+    try:
+        mail = imaplib.IMAP4_SSL("imap.gmail.com", 993)
+        mail.login(username, password)
+        mail.logout()
+        return True, "Success"
+    except imaplib.IMAP4.error as e:
+        return False, f"Auth Failed: {str(e)}"
+    except Exception as e:
+        return False, f"Connection error: {str(e)}"
+
+
 def fetch_live_emails(username: str, password: str) -> list:
     """Fetch recent emails from a Gmail account via IMAP."""
     password = password.replace(" ", "")
@@ -83,7 +100,6 @@ def fetch_live_emails(username: str, password: str) -> list:
                         "id": f"{username.split('@')[0]}-{e_id.decode()}",
                         "sender": sender,
                         "subject": subject,
-                        # Type, urgency, sentiment will be set by ML classifier in app.py
                         "type": "WORK",
                         "urgency": "MEDIUM",
                         "createdAt": int(msg_date.timestamp() * 1000)

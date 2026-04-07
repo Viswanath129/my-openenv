@@ -27,7 +27,7 @@ import {
 } from 'lucide-react';
 
 // --- Config ---
-const API_URL = 'http://localhost:8000';
+const API_URL = import.meta.env.DEV ? 'http://localhost:8000' : '';
 
 const URGENCY_LEVELS = {
   HIGH:   { label: 'High',   color: 'bg-red-500',     text: 'text-red-700',     bg: 'bg-red-50' },
@@ -66,6 +66,8 @@ export default function App() {
   const [isSyncing, setIsSyncing] = useState(false);
   const [classifierStats, setClassifierStats] = useState(null);
   const [showStats, setShowStats] = useState(false);
+  const [isConnecting, setIsConnecting] = useState(false);
+  const [errMessage, setErrMessage] = useState(null);
 
   // Form state
   const [newEmail, setNewEmail] = useState('');
@@ -105,19 +107,27 @@ export default function App() {
 
   const addAccount = async (e) => {
     e.preventDefault();
+    setIsConnecting(true);
+    setErrMessage(null);
     try {
       const res = await fetch(`${API_URL}/accounts`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username: newEmail, password: newPass }),
       });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.detail || `HTTP ${res.status}`);
+      }
       setNewEmail('');
       setNewPass('');
       setShowAddAccount(false);
       fetchAccounts();
     } catch (e) {
       console.error('[API] addAccount:', e);
+      setErrMessage(e.message);
+    } finally {
+      setIsConnecting(false);
     }
   };
 
@@ -136,7 +146,6 @@ export default function App() {
           .filter((e) => !currentIds.has(e.id))
           .map((e) => ({
             ...e,
-            // Normalize keys from server (ML classifier now provides these)
             type: (e.type || 'WORK').toUpperCase(),
             urgency: (e.urgency || 'MEDIUM').toUpperCase(),
             sentiment: e.sentiment || 'Professional',
@@ -171,46 +180,50 @@ export default function App() {
       const urgency = (email.urgency || 'MEDIUM').toUpperCase();
       const sentiment = email.sentiment || 'Professional';
       const confidence = email.confidence || 0.5;
-      const confidenceMultiplier = 0.5 + confidence; // 0.5-1.5
+      const confidenceMultiplier = 0.5 + confidence; 
 
-      // Core reward matrix
       if (type === 'SPAM') {
         if (actionType === 'DELETE') {
-          reward += Math.round(15 * confidenceMultiplier);
+          reward += 2.0 * confidenceMultiplier;
           logMsg = 'Blocked Spam';
         } else {
-          reward += Math.round(-25 * confidenceMultiplier);
+          reward -= 2.5 * confidenceMultiplier;
           logMsg = 'Allowed Spam through';
         }
       } else {
         if (actionType === 'ESCALATE') {
           if (urgency === 'HIGH' || sentiment === 'Aggressive') {
-            reward += 30;
+            reward += 1.5;
             logMsg = `Smart escalation (${sentiment})`;
           } else {
-            reward -= 15;
+            reward -= 1.0;
             logMsg = 'Unnecessary escalation';
           }
         } else if (actionType === 'OPEN') {
-          reward += 10;
+          reward += 1.0 * confidenceMultiplier;
           logMsg = `Processed ${type}`;
         } else if (actionType === 'DELETE') {
-          reward -= 35;
+          reward -= 3.0;
           logMsg = 'Deleted real email!';
         } else if (actionType === 'DEFER') {
-          reward -= 5;
-          logMsg = 'Delayed response';
+          if (urgency === 'HIGH') {
+            reward -= 1.0;
+            logMsg = 'Deferred urgent email';
+          } else {
+            reward -= 0.2;
+            logMsg = 'Delayed response';
+          }
         }
       }
 
-      // Sentiment penalty
       if (sentiment === 'Aggressive' && actionType !== 'ESCALATE' && actionType !== 'OPEN') {
-        reward -= 20;
+        reward -= 1.0;
       }
 
-      // Wait penalty (capped)
-      const waitPenalty = Math.min(Math.floor((email.waitingTime || 0) / 5), 50);
+      const waitPenalty = Math.min(0.1 * (email.waitingTime || 0), 2.0);
       reward -= waitPenalty;
+
+      reward = Math.round(reward * 100) / 100;
 
       setScore((prev) => prev + reward);
       setLastReward({ value: reward, timestamp: Date.now() });
@@ -230,7 +243,6 @@ export default function App() {
         ].slice(0, 12)
       );
 
-      // Submit feedback to backend for accuracy tracking
       if (type === 'SPAM' && actionType === 'DELETE') {
         fetch(`${API_URL}/feedback`, {
           method: 'POST',
@@ -253,7 +265,6 @@ export default function App() {
       fetchLiveEmails();
       timerRef.current = setInterval(() => {
         fetchLiveEmails();
-        // Update waiting times using discoveredAt
         setEmails((prev) =>
           prev.map((e) => ({
             ...e,
@@ -267,14 +278,12 @@ export default function App() {
     return () => clearInterval(timerRef.current);
   }, [isRunning, simSpeed, fetchLiveEmails]);
 
-  // Auto-agent using ref to avoid stale closure
   useEffect(() => {
     if (isAuto && isRunning) {
       autoAgentRef.current = setInterval(() => {
         const currentEmails = emailsRef.current;
         if (currentEmails.length === 0) return;
 
-        // Smart prioritization: spam first, then urgent, then oldest
         const sorted = [...currentEmails].sort((a, b) => {
           const aSpam = (a.type || '').toUpperCase() === 'SPAM' ? 1 : 0;
           const bSpam = (b.type || '').toUpperCase() === 'SPAM' ? 1 : 0;
@@ -301,14 +310,13 @@ export default function App() {
         else action = 'DEFER';
 
         handleAction(target.id, action);
-      }, 2000);
+      }, 1000);
     } else {
       clearInterval(autoAgentRef.current);
     }
     return () => clearInterval(autoAgentRef.current);
   }, [isAuto, isRunning, handleAction]);
 
-  // Periodic classifier stats refresh
   useEffect(() => {
     if (isRunning) {
       const id = setInterval(fetchClassifierStats, 15000);
@@ -320,10 +328,8 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-[#F8FAFC] text-slate-900 font-sans selection:bg-indigo-100 selection:text-indigo-700">
-      <div className="max-w-[1600px] mx-auto p-4 md:p-6 lg:p-8 grid grid-cols-1 lg:grid-cols-12 gap-6 h-screen overflow-hidden">
-        {/* ===== SIDEBAR ===== */}
-        <aside className="lg:col-span-3 flex flex-col gap-5 overflow-y-auto pr-2 pb-8">
-          {/* Brand + Controls */}
+      <div className="max-w-[1600px] mx-auto p-4 md:p-6 lg:p-8 grid grid-cols-1 lg:grid-cols-12 gap-6 lg:h-screen lg:overflow-hidden min-h-screen">
+        <aside className="lg:col-span-3 flex flex-col gap-5 lg:overflow-y-auto pr-2 lg:pb-8">
           <div className="bg-white p-6 rounded-3xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-slate-100">
             <div className="flex items-center gap-3 mb-6">
               <div className="w-11 h-11 bg-gradient-to-br from-indigo-600 to-violet-600 rounded-xl flex items-center justify-center text-white shadow-lg shadow-indigo-200">
@@ -373,7 +379,6 @@ export default function App() {
             </div>
           </div>
 
-          {/* Classifier Stats Card */}
           <div className="bg-gradient-to-br from-slate-900 to-slate-800 p-5 rounded-3xl shadow-xl text-white">
             <div className="flex items-center justify-between mb-3">
               <h3 className="text-[10px] font-black text-indigo-400 uppercase tracking-widest flex items-center gap-2">
@@ -425,7 +430,6 @@ export default function App() {
             )}
           </div>
 
-          {/* Account Management */}
           <div className="bg-white p-5 rounded-3xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-slate-100 flex-1 flex flex-col min-h-0">
             <div className="flex items-center justify-between mb-4">
               <h2 className="font-bold text-slate-700 flex items-center gap-2">
@@ -491,9 +495,7 @@ export default function App() {
           </div>
         </aside>
 
-        {/* ===== MAIN: Inbox Feed ===== */}
-        <main className="lg:col-span-6 flex flex-col gap-5 overflow-hidden">
-          {/* Stats Row */}
+        <main className="lg:col-span-6 flex flex-col gap-5 lg:overflow-hidden min-h-[500px]">
           <div className="grid grid-cols-3 gap-4 shrink-0">
             <div className="bg-white p-5 rounded-3xl shadow-[0_8px_30px_rgb(0,0,0,0.02)] border border-slate-100 relative overflow-hidden group">
               <TrendingUp
@@ -543,7 +545,6 @@ export default function App() {
             </div>
           </div>
 
-          {/* Email List */}
           <div className="bg-white rounded-[32px] shadow-[0_8px_40px_rgb(0,0,0,0.04)] border border-slate-100 flex-1 flex flex-col min-h-0">
             <div className="px-8 py-5 border-b border-slate-50 flex items-center justify-between shrink-0">
               <h2 className="text-lg font-black text-slate-800 flex items-center gap-3">
@@ -570,7 +571,7 @@ export default function App() {
                     <Mail size={40} strokeWidth={1} />
                   </div>
                   <p className="font-bold text-sm">
-                    {isRunning ? 'Scanning inboxes...' : 'Press Launch to start'}
+                    {isRunning ? 'Scanning...' : 'Press Launch to start'}
                   </p>
                 </div>
               ) : (
@@ -609,21 +610,12 @@ export default function App() {
                             <span className="text-sm font-black text-slate-800 tracking-tight truncate max-w-[180px]">
                               {email.sender}
                             </span>
-                            <span
-                              className={`text-[8px] font-black uppercase tracking-tighter px-1.5 py-0.5 rounded ${urgInfo.bg} ${urgInfo.text}`}
-                            >
+                            <span className={`text-[8px] font-black uppercase tracking-tighter px-1.5 py-0.5 rounded ${urgInfo.bg} ${urgInfo.text}`}>
                               {urgInfo.label}
                             </span>
-                            <span
-                              className={`text-[8px] font-black uppercase tracking-tighter px-1.5 py-0.5 rounded ${sentInfo.bg} ${sentInfo.color} flex items-center gap-0.5`}
-                            >
+                            <span className={`text-[8px] font-black uppercase tracking-tighter px-1.5 py-0.5 rounded ${sentInfo.bg} ${sentInfo.color} flex items-center gap-0.5`}>
                               {sentInfo.icon} {email.sentiment}
                             </span>
-                            {email.spam_score > 0.7 && (
-                              <span className="text-[8px] font-black bg-red-500 text-white px-1.5 py-0.5 rounded flex items-center gap-0.5">
-                                <AlertTriangle size={8} /> SPAM {Math.round(email.spam_score * 100)}%
-                              </span>
-                            )}
                           </div>
                           <p className="text-xs text-slate-500 line-clamp-1">{email.subject}</p>
                         </div>
@@ -635,9 +627,7 @@ export default function App() {
                               {email.waitingTime || 0}s
                             </p>
                           </div>
-                          <div
-                            className={`w-1.5 h-1.5 rounded-full ${isOld ? 'bg-red-400 animate-pulse' : 'bg-slate-200'}`}
-                          />
+                          <div className={`w-1.5 h-1.5 rounded-full ${isOld ? 'bg-red-400 animate-pulse' : 'bg-slate-200'}`} />
                         </div>
                       </div>
                     );
@@ -648,9 +638,7 @@ export default function App() {
           </div>
         </main>
 
-        {/* ===== RIGHT: Action Inspector + RL Log ===== */}
-        <aside className="lg:col-span-3 flex flex-col gap-5 overflow-hidden">
-          {/* Action Inspector */}
+        <aside className="lg:col-span-3 flex flex-col gap-5 lg:overflow-hidden min-h-[500px]">
           <div className="bg-gradient-to-br from-slate-900 to-slate-800 text-white p-6 rounded-[32px] shadow-2xl relative overflow-hidden shrink-0">
             <div className="relative z-10">
               <h3 className="text-[10px] font-black text-indigo-400 uppercase tracking-widest mb-4 flex items-center gap-2">
@@ -659,180 +647,79 @@ export default function App() {
               {selectedEmail ? (
                 <div>
                   <div className="flex items-center gap-2 mb-2">
-                    <span
-                      className={`text-[9px] font-black px-2 py-0.5 rounded ${
-                        selectedEmail.type?.toUpperCase() === 'SPAM'
-                          ? 'bg-red-500/20 text-red-400'
-                          : selectedEmail.type?.toUpperCase() === 'SUPPORT'
-                          ? 'bg-purple-500/20 text-purple-400'
-                          : 'bg-blue-500/20 text-blue-400'
-                      }`}
-                    >
+                    <span className={`text-[9px] font-black px-2 py-0.5 rounded ${selectedEmail.type?.toUpperCase() === 'SPAM' ? 'bg-red-500/20 text-red-400' : 'bg-blue-500/20 text-blue-400'}`}>
                       {(selectedEmail.type || 'WORK').toUpperCase()}
                     </span>
-                    <span
-                      className={`text-[9px] font-black px-2 py-0.5 rounded ${
-                        getUrgency(selectedEmail.urgency).text
-                      } bg-white/10`}
-                    >
+                    <span className={`text-[9px] font-black px-2 py-0.5 rounded ${getUrgency(selectedEmail.urgency).text} bg-white/10`}>
                       {getUrgency(selectedEmail.urgency).label}
                     </span>
                   </div>
                   <h4 className="font-bold text-base leading-tight mb-1 line-clamp-2">{selectedEmail.subject}</h4>
                   <p className="text-slate-400 text-xs mb-1 truncate">{selectedEmail.sender}</p>
-                  {selectedEmail.account && (
-                    <p className="text-slate-500 text-[10px] mb-4 truncate">via {selectedEmail.account}</p>
-                  )}
 
-                  {/* Confidence bar */}
-                  {selectedEmail.confidence && (
-                    <div className="mb-4">
-                      <div className="flex justify-between text-[9px] mb-1">
-                        <span className="text-slate-400">ML Confidence</span>
-                        <span className="text-indigo-400 font-bold">
-                          {Math.round((selectedEmail.confidence || 0) * 100)}%
-                        </span>
-                      </div>
-                      <div className="h-1.5 bg-white/10 rounded-full overflow-hidden">
-                        <div
-                          className="h-full bg-gradient-to-r from-indigo-500 to-violet-500 rounded-full transition-all duration-500"
-                          style={{ width: `${(selectedEmail.confidence || 0) * 100}%` }}
-                        />
-                      </div>
-                    </div>
-                  )}
-
-                  <div className="grid grid-cols-2 gap-2.5">
-                    <InspectorBtn
-                      onClick={() => handleAction(selectedEmail.id, 'OPEN')}
-                      icon={<Eye size={14} />}
-                      label="Open"
-                      color="bg-blue-500 hover:bg-blue-600"
-                    />
-                    <InspectorBtn
-                      onClick={() => handleAction(selectedEmail.id, 'DELETE')}
-                      icon={<Trash2 size={14} />}
-                      label="Trash"
-                      color="bg-red-500 hover:bg-red-600"
-                    />
-                    <InspectorBtn
-                      onClick={() => handleAction(selectedEmail.id, 'DEFER')}
-                      icon={<Clock size={14} />}
-                      label="Defer"
-                      color="bg-slate-600 hover:bg-slate-500"
-                    />
-                    <InspectorBtn
-                      onClick={() => handleAction(selectedEmail.id, 'ESCALATE')}
-                      icon={<ArrowUpCircle size={14} />}
-                      label="Escalate"
-                      color="bg-purple-500 hover:bg-purple-600"
-                    />
+                  <div className="grid grid-cols-2 gap-2.5 mt-4">
+                    <InspectorBtn onClick={() => handleAction(selectedEmail.id, 'OPEN')} icon={<Eye size={14} />} label="Open" color="bg-blue-500" />
+                    <InspectorBtn onClick={() => handleAction(selectedEmail.id, 'DELETE')} icon={<Trash2 size={14} />} label="Trash" color="bg-red-500" />
+                    <InspectorBtn onClick={() => handleAction(selectedEmail.id, 'DEFER')} icon={<Clock size={14} />} label="Defer" color="bg-slate-600" />
+                    <InspectorBtn onClick={() => handleAction(selectedEmail.id, 'ESCALATE')} icon={<ArrowUpCircle size={14} />} label="Escalate" color="bg-purple-500" />
                   </div>
                 </div>
               ) : (
                 <div className="flex flex-col items-center justify-center p-8 text-center text-slate-600 border-2 border-dashed border-slate-700 rounded-3xl">
                   <ChevronRight size={32} className="mb-2 opacity-20" />
-                  <p className="text-xs font-medium">Select an email to inspect</p>
+                  <p className="text-xs font-medium">Select an email</p>
                 </div>
               )}
             </div>
           </div>
 
-          {/* RL Decision Log */}
           <div className="bg-white p-5 rounded-[32px] shadow-[0_8px_30px_rgb(0,0,0,0.02)] border border-slate-100 flex-1 flex flex-col min-h-0 overflow-hidden">
             <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4 flex items-center gap-2">
-              <BarChart3 size={12} /> RL Decision Log
+              <BarChart3 size={12} /> Decision Log
             </h3>
             <div className="flex-1 overflow-y-auto space-y-2.5 pr-1 scrollbar-hide">
               {logs.map((log, i) => (
-                <div
-                  key={i}
-                  className={`flex items-start justify-between p-3.5 rounded-2xl border-l-4 transition-colors ${
-                    log.reward >= 0
-                      ? 'bg-emerald-50/50 border-emerald-300'
-                      : 'bg-red-50/50 border-red-300'
-                  }`}
-                >
+                <div key={i} className={`flex items-start justify-between p-3.5 rounded-2xl border-l-4 ${log.reward >= 0 ? 'bg-emerald-50/50 border-emerald-300' : 'bg-red-50/50 border-red-300'}`}>
                   <div className="min-w-0">
                     <p className="text-xs font-black text-slate-700 truncate">{log.msg}</p>
                     <div className="flex items-center gap-2 mt-0.5">
                       <span className="text-[9px] font-bold text-slate-400">{log.time}</span>
-                      {log.action && (
-                        <span className="text-[8px] font-bold uppercase text-slate-300 bg-slate-100 px-1.5 py-0.5 rounded">
-                          {log.action}
-                        </span>
-                      )}
+                      <span className="text-[8px] font-bold uppercase text-slate-300 bg-slate-100 px-1.5 py-0.5 rounded">{log.action}</span>
                     </div>
                   </div>
-                  <span
-                    className={`text-xs font-black shrink-0 ml-2 ${log.reward >= 0 ? 'text-emerald-500' : 'text-red-500'}`}
-                  >
-                    {log.reward > 0 ? '+' : ''}
-                    {log.reward}
+                  <span className={`text-xs font-black shrink-0 ml-2 ${log.reward >= 0 ? 'text-emerald-500' : 'text-red-500'}`}>
+                    {log.reward > 0 ? '+' : ''}{log.reward}
                   </span>
                 </div>
               ))}
-              {logs.length === 0 && (
-                <p className="text-[10px] text-slate-300 italic text-center p-8">No activity yet</p>
-              )}
+              {logs.length === 0 && <p className="text-[10px] text-slate-300 italic text-center p-8">No activity yet</p>}
             </div>
           </div>
         </aside>
 
-        {/* ===== Add Account Modal ===== */}
         {showAddAccount && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
             <div className="bg-white w-full max-w-md rounded-[32px] p-8 shadow-2xl">
               <div className="flex justify-between items-center mb-6">
-                <h3 className="text-xl font-black text-slate-800 tracking-tight">Connect Account</h3>
-                <button
-                  onClick={() => setShowAddAccount(false)}
-                  className="p-2 hover:bg-slate-100 rounded-full transition-colors"
-                >
+                <h3 className="text-xl font-black text-slate-800">Connect Account</h3>
+                <button onClick={() => setShowAddAccount(false)} className="p-2 hover:bg-slate-100 rounded-full">
                   <X size={20} />
                 </button>
               </div>
 
               <form onSubmit={addAccount} className="space-y-5">
                 <div>
-                  <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 px-1">
-                    Gmail Address
-                  </label>
-                  <input
-                    required
-                    type="email"
-                    value={newEmail}
-                    onChange={(e) => setNewEmail(e.target.value)}
-                    className="w-full px-5 py-3.5 bg-slate-50 border-2 border-transparent rounded-2xl focus:bg-white focus:border-indigo-500 outline-none transition-all font-bold placeholder:text-slate-300"
-                    placeholder="you@gmail.com"
-                  />
+                  <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Gmail Address</label>
+                  <input required type="email" value={newEmail} onChange={(e) => setNewEmail(e.target.value)} className="w-full px-5 py-3.5 bg-slate-50 border-2 border-transparent rounded-2xl focus:bg-white focus:border-indigo-500 outline-none transition-all font-bold" placeholder="you@gmail.com" />
                 </div>
                 <div>
-                  <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 px-1">
-                    App Password
-                  </label>
-                  <input
-                    required
-                    type="password"
-                    value={newPass}
-                    onChange={(e) => setNewPass(e.target.value)}
-                    className="w-full px-5 py-3.5 bg-slate-50 border-2 border-transparent rounded-2xl focus:bg-white focus:border-indigo-500 outline-none transition-all font-bold placeholder:text-slate-300"
-                    placeholder="xxxx xxxx xxxx xxxx"
-                  />
-                  <p className="text-[10px] text-slate-400 mt-2 px-1 leading-relaxed">
-                    Generate a 16-character App Password from{' '}
-                    <a
-                      href="https://myaccount.google.com/apppasswords"
-                      target="_blank"
-                      rel="noreferrer"
-                      className="text-indigo-500 underline"
-                    >
-                      Google Account Settings
-                    </a>
-                  </p>
+                  <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">App Password</label>
+                  <input required type="password" value={newPass} onChange={(e) => setNewPass(e.target.value)} className="w-full px-5 py-3.5 bg-slate-50 border-2 border-transparent rounded-2xl focus:bg-white focus:border-indigo-500 outline-none transition-all font-bold" placeholder="xxxx xxxx xxxx xxxx" />
+                  {errMessage && <p className="text-[10px] text-red-500 mt-2 font-bold flex items-center gap-1"><AlertTriangle size={10} /> {errMessage}</p>}
                 </div>
-                <button className="w-full bg-gradient-to-r from-indigo-600 to-violet-600 text-white font-black py-3.5 rounded-2xl shadow-xl shadow-indigo-100 hover:from-indigo-700 hover:to-violet-700 transition-all hover:scale-[1.02] active:scale-100">
-                  Connect Account
+                <button disabled={isConnecting} className={`w-full text-white font-black py-4 rounded-2xl shadow-xl transition-all flex items-center justify-center gap-3 ${isConnecting ? 'bg-slate-400' : 'bg-gradient-to-r from-indigo-600 to-violet-600'}`}>
+                  {isConnecting && <div className="h-4 w-4 border-2 border-white border-t-transparent rounded-full animate-spin" />}
+                  {isConnecting ? 'Validating...' : 'Connect Account'}
                 </button>
               </form>
             </div>
@@ -840,26 +727,15 @@ export default function App() {
         )}
       </div>
 
-      <style
-        dangerouslySetInnerHTML={{
-          __html: `
-        .scrollbar-hide::-webkit-scrollbar { display: none; }
-        .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
-      `,
-        }}
-      />
+      <style dangerouslySetInnerHTML={{ __html: `.scrollbar-hide::-webkit-scrollbar { display: none; } .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }` }} />
     </div>
   );
 }
 
 function InspectorBtn({ onClick, icon, label, color }) {
   return (
-    <button
-      onClick={onClick}
-      className={`w-full py-3 rounded-xl font-black text-xs text-white transition-all active:scale-95 flex items-center justify-center gap-2 ${color}`}
-    >
-      {icon}
-      {label}
+    <button onClick={onClick} className={`w-full py-3 rounded-xl font-black text-xs text-white transition-all active:scale-95 flex items-center justify-center gap-2 ${color} hover:opacity-90`}>
+      {icon} {label}
     </button>
   );
 }

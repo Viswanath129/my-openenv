@@ -6,25 +6,29 @@ TriageAI FastAPI Backend v3.0
 - Classifier stats & performance tracking
 """
 
-from fastapi import FastAPI
-from fastapi.responses import RedirectResponse
+from fastapi import FastAPI, HTTPException
+from fastapi.responses import RedirectResponse, FileResponse
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+import os
+from dotenv import load_dotenv
+from pydantic import BaseModel
+from typing import Dict, Optional
+import torch
+import numpy as np
 
 try:
     from .environment import EmailEnv
     from .models import Action
-    from .imap_client import fetch_live_emails
-    from .classifier import EmailClassifier, analyze_sentiment, detect_urgency
+    from .imap_client import fetch_live_emails, validate_credentials
+    from .classifier import EmailClassifier
+    from .agent import DQNAgent
 except ImportError:
     from environment import EmailEnv
     from models import Action
-    from imap_client import fetch_live_emails
-    from classifier import EmailClassifier, analyze_sentiment, detect_urgency
-import os
-from dotenv import load_dotenv
-
-from pydantic import BaseModel
-from typing import Dict, Optional
+    from imap_client import fetch_live_emails, validate_credentials
+    from classifier import EmailClassifier
+    from agent import DQNAgent
 
 # Load env vars early
 load_dotenv()
@@ -48,7 +52,7 @@ _dataset_path = os.path.join(
     "..",
     "dataset",
     "spam_assassin.csv",
-).replace("\\", "/")  # Normalize path for Windows
+).replace("\\", "/") 
 live_classifier = EmailClassifier(dataset_path=_dataset_path)
 
 # --- In-memory account store ---
@@ -59,29 +63,19 @@ if os.getenv("EMAIL_1_USER") and os.getenv("EMAIL_1_PASS"):
 if os.getenv("EMAIL_2_USER") and os.getenv("EMAIL_2_PASS"):
     ACCOUNTS[os.getenv("EMAIL_2_USER")] = os.getenv("EMAIL_2_PASS").replace(" ", "")
 
-
 class AccountRequest(BaseModel):
     username: str
     password: str
-
 
 class ClassifyRequest(BaseModel):
     text: str
     subject: Optional[str] = ""
 
-
 class FeedbackRequest(BaseModel):
     predicted_spam: bool
     actual_spam: bool
 
-
-# --- Routes ---
-
-
-from fastapi.staticfiles import StaticFiles
-from fastapi.responses import RedirectResponse, FileResponse
-import os
-
+# --- Static Files & Frontend ---
 frontend_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "frontend", "dist")
 
 if os.path.isdir(frontend_path):
@@ -95,17 +89,21 @@ else:
     def root():
         return RedirectResponse(url="/docs")
 
+# --- Routes ---
 
 @app.post("/accounts")
 def add_account(req: AccountRequest):
+    """Validate and add a new IMAP account."""
+    success, message = validate_credentials(req.username, req.password)
+    if not success:
+        raise HTTPException(status_code=401, detail=message)
+    
     ACCOUNTS[req.username] = req.password.replace(" ", "")
     return {"status": "added", "count": len(ACCOUNTS)}
-
 
 @app.get("/accounts")
 def get_accounts():
     return {"accounts": list(ACCOUNTS.keys())}
-
 
 @app.get("/live-inbox")
 def live_inbox():
@@ -117,7 +115,6 @@ def live_inbox():
             continue
         try:
             emails = fetch_live_emails(user, pwd)
-            # Classify each email with ML
             for email in emails:
                 result = live_classifier.classify(
                     text=email.get("subject", ""), subject=email.get("subject", "")
@@ -135,20 +132,47 @@ def live_inbox():
     all_emails.sort(key=lambda x: x.get("createdAt", 0), reverse=True)
     return {"emails": all_emails}
 
-
 @app.post("/classify")
 def classify_email(req: ClassifyRequest):
     """Classify a single email text using the ML pipeline."""
     result = live_classifier.classify(req.text, req.subject)
     return result
 
+@app.post("/predict")
+def predict_action(req: ClassifyRequest):
+    """Suggest an action for an email using the RL agent."""
+    agent = DQNAgent(state_size=5, action_size=4)
+    model_path = os.path.join(os.path.dirname(__file__), "models", "dqn_email_v1.pth")
+    if os.path.exists(model_path):
+        agent.load(model_path)
+
+    res = live_classifier.classify(req.text, req.subject)
+
+    sent_map = {"Casual": 0.0, "Professional": 0.5, "Aggressive": 1.0}
+    urg_map = {"LOW": 0.0, "MEDIUM": 0.5, "HIGH": 1.0}
+
+    state_v = np.array([
+        urg_map.get(res["urgency"], 0.5),
+        sent_map.get(res["sentiment"], 0.5),
+        res["spam_score"],
+        0.05, 
+        res["confidence"],
+    ])
+
+    action_idx = agent.get_action(state_v, explore=False)
+    action_map = ["OPEN", "DELETE", "DEFER", "ESCALATE"]
+    
+    return {
+        "action": action_map[action_idx],
+        "classification": res,
+        "confidence": float(res["confidence"]),
+    }
 
 @app.post("/feedback")
 def submit_feedback(req: FeedbackRequest):
     """Submit classification feedback for online accuracy tracking."""
     live_classifier.update_feedback(req.predicted_spam, req.actual_spam)
     return {"status": "recorded", "stats": live_classifier.stats}
-
 
 @app.get("/classifier-stats")
 def classifier_stats():
@@ -158,37 +182,20 @@ def classifier_stats():
         "env_classifier": env.classifier.stats,
     }
 
-
 @app.post("/reset")
 def reset(task: str = "train"):
     return env.reset(task=task)
-
 
 @app.post("/step")
 def step(action: Action):
     obs, reward, done, info = env.step(action.model_dump())
     return {"observation": obs, "reward": reward, "done": done, "info": info}
 
-
 @app.get("/state")
 def state():
     return env.state()
 
-
 @app.get("/grader")
 def grader():
-    """Return the normalized grader score (0.0-1.0) for the current episode."""
+    """Return the normalized grader score for the current episode."""
     return {"score": env.grader(), "total_reward": env.total_reward, "task": env.current_task}
-
-
-@app.get("/tasks")
-def tasks():
-    """Enumerate all available tasks with difficulty metadata."""
-    return {
-        "tasks": [
-            {"id": "task1", "name": "Single Email Triage", "difficulty": "easy", "max_steps": 5},
-            {"id": "task2", "name": "Backlog Processing", "difficulty": "medium", "max_steps": 10},
-            {"id": "task3", "name": "Dynamic Inbox Stream", "difficulty": "hard", "max_steps": 20},
-        ]
-    }
-
