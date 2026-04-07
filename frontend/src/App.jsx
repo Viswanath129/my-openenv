@@ -713,7 +713,10 @@ export default function App() {
                   <input required type="email" value={newEmail} onChange={(e) => setNewEmail(e.target.value)} className="w-full px-5 py-3.5 bg-slate-50 border-2 border-transparent rounded-2xl focus:bg-white focus:border-indigo-500 outline-none transition-all font-bold" placeholder="you@gmail.com" />
                 </div>
                 <div>
-                  <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">App Password</label>
+                  <div className="flex justify-between items-center mb-2">
+                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest">App Password</label>
+                    <a href="https://myaccount.google.com/apppasswords" target="_blank" rel="noopener noreferrer" className="text-[9px] font-bold text-indigo-500 hover:underline">Get one here</a>
+                  </div>
                   <input required type="password" value={newPass} onChange={(e) => setNewPass(e.target.value)} className="w-full px-5 py-3.5 bg-slate-50 border-2 border-transparent rounded-2xl focus:bg-white focus:border-indigo-500 outline-none transition-all font-bold" placeholder="xxxx xxxx xxxx xxxx" />
                   {errMessage && <p className="text-[10px] text-red-500 mt-2 font-bold flex items-center gap-1"><AlertTriangle size={10} /> {errMessage}</p>}
                 </div>
