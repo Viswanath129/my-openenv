@@ -274,6 +274,42 @@ This project was built for the **Meta PyTorch OpenEnv Hackathon 2026**, in colla
 
 ---
 
+## 🧪 Testing & Evaluation
+
+### 1. Manual UI Walkthrough (Demo Mode)
+If your environment (like Hugging Face) restricts outbound IMAP port 993, use the following **Demo Credentials** to bypass the login and view the live triage dashboard:
+
+- **Username**: `demo`
+- **Password**: `any`
+
+Once connected, the system will generate three diverse emails. You can manually **Open**, **Trash**, or **Escalate** them to see the real-time reward feedback and ML classification signals.
+
+### 2. Automated Baseline (Inference)
+The project includes a robust inference script that uses a deterministic heuristic policy to establish a performance baseline across all three tasks.
+
+```bash
+# Run the benchmark against the local server
+python inference.py
+```
+
+**Expected Outputs:**
+- `[START] task=task1 ...`
+- `[STEP] step=1 ... reward=2.45`
+- `[END] success=true steps=1 score=1.0000`
+
+### 3. OpenEnv Validation
+To ensure the environment perfectly adheres to the OpenEnv standard:
+
+```bash
+# Install openenv CLI
+pip install openenv-core
+
+# Validate the local environment
+openenv validate
+```
+
+---
+
 ## 📄 License
 
 MIT License
