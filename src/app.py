@@ -24,10 +24,12 @@ try:
     from .environment import EmailEnv
     from .models import Action
     from .classifier import EmailClassifier
+    from .imap_client import validate_credentials, fetch_live_emails
 except ImportError:
     from environment import EmailEnv
     from models import Action
     from classifier import EmailClassifier
+    from imap_client import validate_credentials, fetch_live_emails
 
 # Load env vars early
 load_dotenv()
@@ -71,6 +73,15 @@ class ClassifyRequest(BaseModel):
 class FeedbackRequest(BaseModel):
     predicted_spam: bool
     actual_spam: bool
+
+
+class AccountRequest(BaseModel):
+    username: str
+    password: str
+
+
+# ── In-memory account store ──
+connected_accounts: Dict[str, str] = {}
 
 
 # ── Static Files & Frontend ──
@@ -146,6 +157,48 @@ def classifier_stats():
         "live_classifier": live_classifier.stats,
         "env_classifier": env.classifier.stats,
     }
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Account & Live Email Endpoints
+# ══════════════════════════════════════════════════════════════════════════════
+
+@app.get("/accounts")
+def list_accounts():
+    """List all connected IMAP accounts."""
+    return {"accounts": list(connected_accounts.keys())}
+
+
+@app.post("/accounts")
+def add_account(req: AccountRequest):
+    """Validate and connect a new IMAP account."""
+    success, msg = validate_credentials(req.username, req.password)
+    if not success:
+        raise HTTPException(status_code=400, detail=msg)
+    
+    connected_accounts[req.username] = req.password
+    return {"status": "connected", "username": req.username}
+
+
+@app.get("/live-inbox")
+def get_live_inbox():
+    """Fetch recent emails from all accounts and classify them."""
+    all_emails = []
+    for user, pwd in connected_accounts.items():
+        raw_emails = fetch_live_emails(user, pwd)
+        for email_data in raw_emails:
+            # Classify using the ML pipeline
+            classification = live_classifier.classify(email_data["subject"])
+            email_data.update({
+                "type": classification["type"],
+                "urgency": classification["urgency"],
+                "sentiment": classification["sentiment"],
+                "confidence": classification["confidence"],
+                "spam_score": classification["spam_score"],
+            })
+            all_emails.append(email_data)
+    
+    return {"emails": all_emails}
 
 
 # ── Direct execution ──
