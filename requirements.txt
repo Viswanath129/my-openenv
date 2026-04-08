@@ -1,9 +1,7 @@
 fastapi>=0.104.1
-uvicorn[standard]>=0.24.0
+uvicorn>=0.24.0
 pydantic>=2.5.0
 numpy
 openai
 python-dotenv
-# openenv-core is NOT imported at runtime; the OpenEnv API spec
-# is implemented directly via FastAPI. Including it causes a
-# dependency conflict (fastmcp 3.0.0 → uvicorn>=0.35).
+openenv>=0.2.0
