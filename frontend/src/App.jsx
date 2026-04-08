@@ -260,9 +260,15 @@ export default function App() {
 
           <div className="bg-white border border-slate-200 p-5 rounded-2xl shadow-sm text-slate-800">
             {(() => {
-              const maxTheoretical = logs.length > 0 ? logs.length * 2.5 : 1;
-              const openEnvScore = logs.length === 0 ? 0.00 : Math.min(Math.max(score / maxTheoretical, 0.0), 1.0);
-              const currentGen = openEnvScore >= 0.75 ? "3rd" : (openEnvScore >= 0.4 ? "2nd" : "1st");
+              // Derive RL Generation from BACKEND stats (persist across refresh), not client state
+              const cls = classifierStats?.live_classifier;
+              const totalClassified = cls?.total_classified || 0;
+              const avgReward = cls?.avg_reward_last_50 || 0;
+              const isTrained = cls?.model_trained || false;
+              // Generation tiers based on server-persisted intelligence maturity
+              const currentGen = (isTrained && totalClassified > 100000 && avgReward > 10) ? "3rd"
+                : (isTrained && totalClassified > 50000) ? "2nd"
+                : "1st";
               return (
                 <>
                   <div className="flex items-center justify-between mb-3">
