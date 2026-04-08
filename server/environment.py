@@ -262,7 +262,10 @@ class EmailEnv:
             return 0.5
 
         raw = (self.total_reward - worst) / (optimal - worst)
-        return round(min(max(raw, 0.0), 1.0), 4)
+        clamped = min(max(raw, 0.0), 1.0)
+        # Strict (0, 1) — validator rejects exactly 0.0 or 1.0
+        clamped = max(0.01, min(0.99, clamped))
+        return round(clamped, 4)
 
     def state(self) -> Dict:
         """Return the current environment state as an observation dict."""
