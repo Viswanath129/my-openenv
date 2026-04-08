@@ -4,4 +4,4 @@ pydantic>=2.5.0
 numpy
 openai
 python-dotenv
-openenv>=0.2.0
+openenv>=0.1.0
