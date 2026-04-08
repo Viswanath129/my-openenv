@@ -1,10 +1,10 @@
 """
 InboxIQ Inference Script — OpenEnv Hackathon
-Uses OpenAI-compatible client via Hugging Face Router.
+Uses OpenAI-compatible client via the hackathon's LiteLLM proxy.
 Emits structured [START], [STEP], [END] logs per OpenEnv spec.
 
 Usage:
-    HF_TOKEN=hf_xxx python inference.py
+    API_BASE_URL=... API_KEY=... python inference.py
     ENV_URL=http://localhost:8000 python inference.py
 """
 
@@ -14,10 +14,10 @@ from typing import List, Optional
 
 from openai import OpenAI
 
-# ── Required environment variables ──
-API_BASE_URL = os.getenv("API_BASE_URL", "https://router.huggingface.co/v1")
-MODEL_NAME = os.getenv("MODEL_NAME", "Qwen/Qwen2.5-72B-Instruct")
-HF_TOKEN = os.getenv("HF_TOKEN")
+# ── Required environment variables (injected by hackathon evaluator) ──
+API_BASE_URL = os.environ.get("API_BASE_URL")
+MODEL_NAME = os.environ.get("MODEL_NAME", "Qwen/Qwen2.5-72B-Instruct")
+API_KEY = os.environ.get("API_KEY")
 
 # ── Environment config ──
 ENV_URL = os.environ.get("ENV_URL", "http://localhost:8000")
@@ -179,10 +179,13 @@ def main():
     print("  InboxIQ — OpenEnv Inference Benchmark")
     print("=" * 60)
 
-    client = OpenAI(base_url=API_BASE_URL, api_key=HF_TOKEN) if HF_TOKEN else None
-
-    if not client:
-        print("[INFO] No HF_TOKEN set — using heuristic fallback policy.")
+    # Initialize OpenAI client with injected API_BASE_URL and API_KEY
+    client = None
+    if API_BASE_URL and API_KEY:
+        client = OpenAI(base_url=API_BASE_URL, api_key=API_KEY)
+        print(f"[INFO] Using LLM proxy at {API_BASE_URL}")
+    else:
+        print("[INFO] No API_BASE_URL/API_KEY set — using heuristic fallback policy.")
 
     for task_cfg in TASKS:
         task_id = task_cfg["id"]
@@ -203,7 +206,7 @@ def main():
                 if not inbox and step > 1:
                     break
 
-                if client and HF_TOKEN:
+                if client:
                     action = get_action_from_llm(client, inbox, step, history)
                 else:
                     action = fallback_policy(inbox)
