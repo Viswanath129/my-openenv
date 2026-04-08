@@ -26,7 +26,11 @@ tags:
   <img src="https://img.shields.io/badge/OpenEnv-Compliant-brightgreen?style=for-the-badge" alt="OpenEnv Compliant">
   <img src="https://img.shields.io/badge/PyTorch-Hackathon-ee4c2c?style=for-the-badge&logo=pytorch&logoColor=white" alt="PyTorch Hackathon">
   <img src="https://img.shields.io/badge/FastAPI-Backend-009688?style=for-the-badge&logo=fastapi&logoColor=white" alt="FastAPI">
-  <img src="https://img.shields.io/badge/HuggingFace-Spaces-yellow?style=for-the-badge&logo=huggingface&logoColor=white" alt="HuggingFace Spaces">
+  <a href="https://huggingface.co/spaces/KasiViswanath/InboxIQ"><img src="https://img.shields.io/badge/🤗%20Live%20Demo-HuggingFace%20Spaces-FFD21E?style=for-the-badge&logo=huggingface&logoColor=black" alt="Live Demo"></a>
+</p>
+
+<p align="center">
+  <b>🔗 Live Demo: <a href="https://huggingface.co/spaces/KasiViswanath/InboxIQ">https://huggingface.co/spaces/KasiViswanath/InboxIQ</a></b>
 </p>
 
 ---
