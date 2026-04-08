@@ -12,31 +12,40 @@ COPY frontend/ ./
 RUN npm run build
 
 # --- Backend Stage ---
-FROM python:3.10-slim
+FROM python:3.10
 WORKDIR /app
 
-# Install dependencies
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy requirements and install
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy everything for the environment
+# Copy everything
 COPY . /app/
 
-# Install the current project in editable mode if needed, or just ensure paths
-RUN pip install -e .
+# Install the project
+RUN pip install .
 
 # Copy built frontend
 COPY --from=frontend-builder /frontend/dist /app/frontend/dist
 
-# Ensure icon is in the built frontend dist
+# Ensure icon is present
 COPY InboxIQ.png /app/frontend/dist/InboxIQ.png
 
-# Expose port
-EXPOSE 8000
+# Hugging Face default port is 7860
+ENV PORT=7860
+EXPOSE 7860
+
+# Ensure modules are findable
+ENV PYTHONPATH=/app
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --retries=3 \
-  CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/state')" || exit 1
+  CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:7860/state')" || exit 1
 
-# Run the server using the entry point defined in pyproject.toml or direct uvicorn
-CMD ["uvicorn", "server.app:app", "--host", "0.0.0.0", "--port", "8000"]
+# Run the server
+CMD ["uvicorn", "server.app:app", "--host", "0.0.0.0", "--port", "7860"]

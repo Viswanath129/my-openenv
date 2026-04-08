@@ -1,7 +1,6 @@
 name: InboxIQ
 description: "InboxIQ — OpenEnv-compliant RL environment for intelligent email inbox triage with ML-powered spam classification, sentiment analysis, and urgency detection. Simulates real-world email management as a sequential decision-making problem."
-version: "3.0"
-port: 8000
+port: 7860
 app: server.app:app
 tags:
   - openenv
