@@ -202,7 +202,7 @@ export default function App() {
         else if (target.waitingTime > 25) action = 'OPEN';
         else action = 'DEFER';
         handleAction(target.id, action);
-      }, 1500);
+      }, 4500); // Slowed down from 1.5s to 4.5s so users can actually read the live stream before the agent triages it!
     } else clearInterval(autoAgentRef.current);
     return () => clearInterval(autoAgentRef.current);
   }, [isAuto, isRunning, handleAction]);
