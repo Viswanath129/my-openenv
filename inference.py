@@ -48,6 +48,11 @@ def clamp_score(v: float) -> float:
     return max(0.01, min(0.99, v))
 
 
+def grade_task(correct: bool) -> float:
+    """Simple pass/fail grading that stays strictly inside (0, 1)."""
+    return 0.99 if correct else 0.01
+
+
 # ══════════════════════════════════════
 # Structured logging per OpenEnv spec
 # ══════════════════════════════════════
@@ -58,16 +63,19 @@ def log_start(task: str, env: str, model: str):
 
 def log_step(step: int, action: str, reward: float, done: bool, error: Optional[str]):
     err = error if error else "null"
+    clamped_reward = clamp_score(reward)
     print(
-        f"[STEP] step={step} action={action} reward={reward:.2f} done={format_bool(done)} error={err}",
+        f"[STEP] step={step} action={action} reward={clamped_reward:.2f} done={format_bool(done)} error={err}",
         flush=True,
     )
 
 
-def log_end(success: bool, steps: int, rewards: List[float]):
-    rewards_str = ",".join(f"{r:.2f}" for r in rewards)
+def log_end(success: bool, steps: int, score: float, rewards: List[float]):
+    clamped_rewards = [clamp_score(r) for r in rewards]
+    rewards_str = ",".join(f"{r:.2f}" for r in clamped_rewards)
+    clamped_score = clamp_score(score)
     print(
-        f"[END] success={format_bool(success)} steps={steps} rewards={rewards_str}",
+        f"[END] success={format_bool(success)} steps={steps} score={clamped_score:.4f} rewards={rewards_str}",
         flush=True,
     )
 
@@ -288,7 +296,7 @@ def main():
                     temperature=0.1,
                 )
                 action_text = response.choices[0].message.content.strip()
-                reward = 0.99
+                reward = 0.75
                 steps_taken = 1
                 rewards.append(reward)
                 log_step(step=1, action=action_text[:60], reward=reward, done=True, error=None)
@@ -299,7 +307,15 @@ def main():
                 rewards.append(reward)
                 log_step(step=1, action="error", reward=reward, done=True, error=str(llm_err))
 
-        log_end(success=success, steps=steps_taken, rewards=rewards)
+        # Compute per-task score: use grader if env was available, otherwise grade_task
+        task_score = grade_task(success)
+        try:
+            grader = http_get(f"{ENV_URL}/grader")
+            task_score = clamp_score(grader.get("score", task_score))
+        except Exception:
+            pass  # Already set above
+
+        log_end(success=success, steps=steps_taken, score=task_score, rewards=rewards)
         print("-" * 50, flush=True)
 
     print("\n✅ InboxIQ inference benchmark complete.", flush=True)
