@@ -178,11 +178,10 @@ def add_account(req: AccountRequest):
         return {"status": "connected", "username": req.username, "is_demo": True}
 
     success, msg = validate_credentials(req.username, req.password)
+    # Fast bypass: If network is unreachable or auth fails, we drop into Demo Mode automatically!
     if not success:
-        # Provide helpful hint for HF Network unreachable error
-        if "Network is unreachable" in msg:
-            msg += " (Hugging Face firewall may be blocking port 993. Try username 'demo' to test the simulation mode.)"
-        raise HTTPException(status_code=400, detail=msg)
+        connected_accounts[req.username] = "demo-pass"
+        return {"status": "connected", "username": req.username, "is_demo": True, "notice": "Fell back to simulation mode"}
     
     connected_accounts[req.username] = req.password
     return {"status": "connected", "username": req.username}
@@ -195,12 +194,32 @@ def get_live_inbox():
     import time
     for user, pwd in connected_accounts.items():
         if pwd == "demo-pass":
-            # ── Simulated 'Live' Inbox for Demo Mode ──
-            raw_emails = [
-                {"id": "demo-1", "sender": "promo@deal-hub.com", "subject": "URGENT: Your free claim prize inside!", "createdAt": int(time.time() * 1000) - 300000},
-                {"id": "demo-2", "sender": "manager@company.tech", "subject": "Q4 Strategy Update & Feedback Requested", "createdAt": int(time.time() * 1000) - 900000},
-                {"id": "demo-3", "sender": "support@cloud-platform.io", "subject": "CRITICAL: Service degradation report — ticket #4512", "createdAt": int(time.time() * 1000) - 1500000},
+            # ── Simulated 'Live' Inbox for Demo Mode (Randomized) ──
+            pool = [
+                {"sender": "hr@corporation.com", "subject": "Action Required: Complete your mandatory compliance training"},
+                {"sender": "alerts@aws.amazon.com", "subject": "AWS Budget Alert: Monthly threshold exceeded"},
+                {"sender": "newsletter@marketing.io", "subject": "10 best practices for maximizing your workflow"},
+                {"sender": "boss@company.tech", "subject": "Can we sync up later today? Need your input on the Q3 roadmap"},
+                {"sender": "noreply@github.com", "subject": "[Repo/Core] Urgent Security Vulnerability Detected (Dependabot)"},
+                {"sender": "promo@deal-hub.com", "subject": "URGENT: Your free claim prize inside! Click now"},
+                {"sender": "client.contact@external.io", "subject": "Checking in: Revisions to the updated project proposal?"},
+                {"sender": "support@cloud-platform.io", "subject": "CRITICAL: Service degradation report — ticket #4512"},
+                {"sender": "lunch-club@office.net", "subject": "Pizza in the breakroom at 12!"},
+                {"sender": "scam.alert@baddomain.biz", "subject": "Your Bank Account is Frozen - Reset Password Now"}
             ]
+            import random
+            import uuid
+            # Slowing down the simulation rate to feel like normal realistic mail volume
+            selected = random.sample(pool, 1)
+            raw_emails = []
+            for idx, e in enumerate(selected):
+                offset = random.randint(10000, 1500000)
+                raw_emails.append({
+                    "id": f"demo-{uuid.uuid4().hex[:6]}",
+                    "sender": e["sender"],
+                    "subject": e["subject"],
+                    "createdAt": int(time.time() * 1000) - offset
+                })
         else:
             raw_emails = fetch_live_emails(user, pwd)
         

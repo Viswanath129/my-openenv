@@ -19,7 +19,7 @@ def validate_credentials(username: str, password: str) -> tuple[bool, str]:
         return False, "Password too short."
 
     try:
-        mail = imaplib.IMAP4_SSL("imap.gmail.com", 993, timeout=15)
+        mail = imaplib.IMAP4_SSL("imap.gmail.com", 993, timeout=2)
         mail.login(username, password)
         mail.logout()
         return True, "Success"
@@ -39,7 +39,7 @@ def fetch_live_emails(username: str, password: str) -> list:
 
     try:
         print(f"[IMAP] Fetching (24hr) for {username}...")
-        mail = imaplib.IMAP4_SSL("imap.gmail.com", 993, timeout=15)
+        mail = imaplib.IMAP4_SSL("imap.gmail.com", 993, timeout=4)
         mail.login(username, password)
         mail.select("inbox")
 

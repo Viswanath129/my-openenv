@@ -1,1 +1,78 @@
 @import "tailwindcss";
+
+@theme {
+  --color-surface-container-highest: #e0e3e5;
+  --color-surface: #f7f9fb;
+  --color-on-tertiary-container: #fdf6ff;
+  --color-inverse-primary: #c1c1ff;
+  --color-on-primary-fixed: #07006c;
+  --color-primary: #4343d5;
+  --color-primary-fixed: #e1e0ff;
+  --color-on-secondary-container: #5c647a;
+  --color-error: #ba1a1a;
+  --color-on-tertiary-fixed: #25005a;
+  --color-on-surface-variant: #464555;
+  --color-inverse-on-surface: #eff1f3;
+  --color-on-error-container: #93000a;
+  --color-surface-variant: #e0e3e5;
+  --color-surface-container-lowest: #ffffff;
+  --color-surface-container-low: #f2f4f6;
+  --color-surface-dim: #d8dadc;
+  --color-primary-container: #5d5fef;
+  --color-on-tertiary-fixed-variant: #5a00c6;
+  --color-on-tertiary: #ffffff;
+  --color-secondary-container: #dae2fd;
+  --color-tertiary-container: #8848f9;
+  --color-secondary: #565e74;
+  --color-on-secondary-fixed-variant: #3f465c;
+  --color-on-secondary-fixed: #131b2e;
+  --color-surface-container: #eceef0;
+  --color-secondary-fixed-dim: #bec6e0;
+  --color-inverse-surface: #2d3133;
+  --color-on-primary-container: #faf7ff;
+  --color-on-background: #191c1e;
+  --color-on-primary-fixed-variant: #2e2bc2;
+  --color-on-secondary: #ffffff;
+  --color-surface-container-high: #e6e8ea;
+  --color-tertiary: #6e26df;
+  --color-primary-fixed-dim: #c1c1ff;
+  --color-on-primary: #ffffff;
+  --color-on-surface: #191c1e;
+  --color-outline-variant: #c7c4d7;
+  --color-surface-tint: #4849da;
+  --color-tertiary-fixed-dim: #d2bbff;
+  --color-surface-bright: #f7f9fb;
+  --color-error-container: #ffdad6;
+  --color-secondary-fixed: #dae2fd;
+  --color-background: #f7f9fb;
+  --color-outline: #767586;
+  --color-on-error: #ffffff;
+
+  --font-headline: "Times New Roman", Times, serif;
+  --font-body: "Times New Roman", Times, serif;
+  --font-label: "Times New Roman", Times, serif;
+  --font-manrope: "Times New Roman", Times, serif;
+  --font-inter: "Times New Roman", Times, serif;
+}
+
+html, body {
+  overflow: hidden;
+  margin: 0;
+  padding: 0;
+  width: 100vw;
+  height: 100vh;
+}
+body {
+  font-family: var(--font-inter), sans-serif;
+  background-color: var(--color-surface);
+  color: var(--color-on-surface);
+}
+
+.material-symbols-outlined {
+  font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+}
+
+.glass-panel {
+  background: rgba(255, 255, 255, 0.8);
+  backdrop-filter: blur(24px);
+}
