@@ -93,6 +93,24 @@ if os.path.isdir(frontend_path):
     @app.get("/")
     def serve_frontend():
         return FileResponse(os.path.join(frontend_path, "index.html"))
+
+    @app.get("/InboxIQ.png")
+    def serve_icon():
+        icon_path = os.path.join(frontend_path, "InboxIQ.png")
+        if os.path.exists(icon_path):
+            return FileResponse(icon_path, media_type="image/png")
+        # Fallback to root-level copy
+        root_icon = os.path.join(os.path.dirname(os.path.dirname(__file__)), "InboxIQ.png")
+        if os.path.exists(root_icon):
+            return FileResponse(root_icon, media_type="image/png")
+        raise HTTPException(status_code=404, detail="Icon not found")
+
+    @app.get("/favicon.svg")
+    def serve_favicon():
+        fav_path = os.path.join(frontend_path, "favicon.svg")
+        if os.path.exists(fav_path):
+            return FileResponse(fav_path, media_type="image/svg+xml")
+        raise HTTPException(status_code=404, detail="Favicon not found")
 else:
     @app.get("/")
     def root():

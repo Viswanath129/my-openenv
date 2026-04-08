@@ -31,6 +31,9 @@ COPY dataset/ /app/dataset/
 # Copy built frontend
 COPY --from=frontend-builder /frontend/dist /app/frontend/dist
 
+# Ensure icon is in the built frontend dist (belt-and-suspenders)
+COPY InboxIQ.png /app/frontend/dist/InboxIQ.png
+
 # Expose port
 EXPOSE 8000
 
