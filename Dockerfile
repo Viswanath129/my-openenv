@@ -19,19 +19,16 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy environment code
-COPY src/ /app/src/
-COPY openenv.yaml /app/openenv.yaml
-COPY InboxIQ.png /app/InboxIQ.png
-COPY inference.py /app/inference.py
+# Copy everything for the environment
+COPY . /app/
 
-# Copy dataset into the container
-COPY dataset/ /app/dataset/
+# Install the current project in editable mode if needed, or just ensure paths
+RUN pip install -e .
 
 # Copy built frontend
 COPY --from=frontend-builder /frontend/dist /app/frontend/dist
 
-# Ensure icon is in the built frontend dist (belt-and-suspenders)
+# Ensure icon is in the built frontend dist
 COPY InboxIQ.png /app/frontend/dist/InboxIQ.png
 
 # Expose port
@@ -41,5 +38,5 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=10s --retries=3 \
   CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/state')" || exit 1
 
-# Run the server
-CMD ["uvicorn", "src.app:app", "--host", "0.0.0.0", "--port", "8000"]
+# Run the server using the entry point defined in pyproject.toml or direct uvicorn
+CMD ["uvicorn", "server.app:app", "--host", "0.0.0.0", "--port", "8000"]

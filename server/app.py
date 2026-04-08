@@ -21,15 +21,15 @@ from pydantic import BaseModel
 from typing import Dict, Optional
 
 try:
+    from server.environment import EmailEnv
+    from server.models import Action
+    from server.classifier import EmailClassifier
+    from server.imap_client import validate_credentials, fetch_live_emails
+except ImportError:
     from .environment import EmailEnv
     from .models import Action
     from .classifier import EmailClassifier
     from .imap_client import validate_credentials, fetch_live_emails
-except ImportError:
-    from environment import EmailEnv
-    from models import Action
-    from classifier import EmailClassifier
-    from imap_client import validate_credentials, fetch_live_emails
 
 # Load env vars early
 load_dotenv()
@@ -88,7 +88,9 @@ connected_accounts: Dict[str, str] = {}
 frontend_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "frontend", "dist")
 
 if os.path.isdir(frontend_path):
-    app.mount("/assets", StaticFiles(directory=os.path.join(frontend_path, "assets")), name="assets")
+    assets_dir = os.path.join(frontend_path, "assets")
+    if os.path.isdir(assets_dir):
+        app.mount("/assets", StaticFiles(directory=assets_dir), name="assets")
 
     @app.get("/")
     def serve_frontend():

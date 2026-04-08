@@ -12,9 +12,9 @@ import csv
 from typing import List, Dict, Optional
 
 try:
-    from .classifier import EmailClassifier, analyze_sentiment, detect_urgency
+    from server.classifier import EmailClassifier, analyze_sentiment, detect_urgency
 except ImportError:
-    from classifier import EmailClassifier, analyze_sentiment, detect_urgency
+    from .classifier import EmailClassifier, analyze_sentiment, detect_urgency
 
 SENTIMENTS = ["Aggressive", "Professional", "Casual"]
 
