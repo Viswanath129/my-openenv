@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "inboxiq"
+version = "3.0"
+description = "InboxIQ — OpenEnv-compliant RL environment for intelligent email inbox triage."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "fastapi==0.104.1",
+    "uvicorn[standard]==0.24.0",
+    "pydantic==2.5.0",
+    "numpy",
+    "openai",
+    "python-dotenv",
+    "openenv-core>=0.2.0"
+]
+
+[project.urls]
+Homepage = "https://github.com/Viswanath129/my-openenv"
+
+[project.scripts]
+server = "server.app:main"
