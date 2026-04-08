@@ -15,12 +15,8 @@ from typing import List, Optional
 from openai import OpenAI
 
 # ── Required environment variables (injected by hackathon evaluator) ──
-os.environ.setdefault("API_BASE_URL", "http://localhost:8000/v1")
-os.environ.setdefault("MODEL_NAME", "Qwen/Qwen2.5-72B-Instruct")
-os.environ.setdefault("API_KEY", "default_key")
-
 API_BASE_URL = os.environ["API_BASE_URL"]
-MODEL_NAME = os.environ["MODEL_NAME"]
+MODEL_NAME = os.environ.get("MODEL_NAME", "Qwen/Qwen2.5-72B-Instruct")
 API_KEY = os.environ["API_KEY"]
 
 HF_TOKEN = os.environ.get("HF_TOKEN")
