@@ -14,10 +14,11 @@ from typing import List, Optional
 
 from openai import OpenAI
 
-# ── Required environment variables (injected by hackathon evaluator) ──
-API_BASE_URL = os.environ.get("API_BASE_URL")
+# ── LLM provider settings ──
+# Supports both hackathon variables and standard OpenAI-style variables.
+API_BASE_URL = os.environ.get("API_BASE_URL") or os.environ.get("OPENAI_BASE_URL")
 MODEL_NAME = os.environ.get("MODEL_NAME", "Qwen/Qwen2.5-72B-Instruct")
-API_KEY = os.environ.get("API_KEY")
+API_KEY = os.environ.get("API_KEY") or os.environ.get("OPENAI_API_KEY")
 
 # ── Environment config ──
 ENV_URL = os.environ.get("ENV_URL", "http://localhost:8000")
@@ -179,13 +180,18 @@ def main():
     print("  InboxIQ — OpenEnv Inference Benchmark")
     print("=" * 60)
 
-    # Initialize OpenAI client with injected API_BASE_URL and API_KEY
+    # Initialize OpenAI-compatible client.
     client = None
-    if API_BASE_URL and API_KEY:
-        client = OpenAI(base_url=API_BASE_URL, api_key=API_KEY)
-        print(f"[INFO] Using LLM proxy at {API_BASE_URL}")
+    if API_KEY:
+        client_kwargs = {"api_key": API_KEY}
+        if API_BASE_URL:
+            client_kwargs["base_url"] = API_BASE_URL
+            print(f"[INFO] Using custom LLM endpoint at {API_BASE_URL}")
+        else:
+            print("[INFO] Using default OpenAI endpoint with provided API key.")
+        client = OpenAI(**client_kwargs)
     else:
-        print("[INFO] No API_BASE_URL/API_KEY set — using heuristic fallback policy.")
+        print("[INFO] No API key set (API_KEY or OPENAI_API_KEY) — using heuristic fallback policy.")
 
     for task_cfg in TASKS:
         task_id = task_cfg["id"]

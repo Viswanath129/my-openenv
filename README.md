@@ -179,7 +179,11 @@ pip install -r requirements.txt
 python -m uvicorn src.app:app --host 0.0.0.0 --port 8000
 
 # 4. Run Inference Benchmark
-HF_TOKEN=hf_your_token python inference.py
+# Option A: Your own OpenAI key
+OPENAI_API_KEY=sk-your-key python inference.py
+
+# Option B: Any OpenAI-compatible provider (OpenRouter, LiteLLM proxy, etc.)
+API_BASE_URL=https://your-provider/v1 API_KEY=your-key python inference.py
 ```
 
 ### Docker
