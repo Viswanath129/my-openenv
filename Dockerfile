@@ -20,15 +20,14 @@ RUN apt-get update && apt-get install -y \
     build-essential \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy requirements and install
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# Upgrade pip
+RUN pip install --no-cache-dir --upgrade pip
 
 # Copy everything
 COPY . /app/
 
-# Install the project
-RUN pip install .
+# Install the project and dependencies in one go
+RUN pip install --no-cache-dir .
 
 # Copy built frontend
 COPY --from=frontend-builder /frontend/dist /app/frontend/dist
