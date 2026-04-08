@@ -49,6 +49,6 @@ class StepResult(BaseModel):
 
 class GraderResult(BaseModel):
     """Grader score for the current episode."""
-    score: float = Field(ge=0.0, le=1.0)
+    score: float = Field(gt=0.0, lt=1.0)
     total_reward: float
     task: str

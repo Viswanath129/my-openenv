@@ -244,7 +244,8 @@ class EmailEnv:
         }
 
         if done:
-            info["grader_score"] = self.grader()
+            gs = self.grader()
+            info["grader_score"] = max(0.01, min(0.99, gs))
 
         return self.state(), step_reward, done, info
 

@@ -20,6 +20,11 @@ from dotenv import load_dotenv
 from pydantic import BaseModel
 from typing import Dict, Optional
 
+
+def _clamp_score(v: float) -> float:
+    """Clamp to strict (0, 1) — validator rejects 0.0 and 1.0."""
+    return max(0.01, min(0.99, v))
+
 try:
     from server.environment import EmailEnv
     from server.models import Action
@@ -133,7 +138,7 @@ def reset(task: str = "train"):
 def step(action: Action):
     """Execute one action and return (observation, reward, done, info)."""
     obs, reward, done, info = env.step(action.model_dump())
-    return {"observation": obs, "reward": reward, "done": done, "info": info}
+    return {"observation": obs, "reward": _clamp_score(reward), "done": done, "info": info}
 
 
 @app.get("/state")
@@ -146,7 +151,7 @@ def state():
 def grader():
     """Return the normalized grader score for the current episode."""
     return {
-        "score": env.grader(),
+        "score": _clamp_score(env.grader()),
         "total_reward": env.total_reward,
         "task": env.current_task,
     }
