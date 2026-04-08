@@ -9,9 +9,9 @@ description = "InboxIQ — OpenEnv-compliant RL environment for intelligent emai
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
-    "fastapi==0.104.1",
-    "uvicorn[standard]==0.24.0",
-    "pydantic==2.5.0",
+    "fastapi>=0.104.1",
+    "uvicorn[standard]",
+    "pydantic>=2.5.0",
     "numpy",
     "openai",
     "python-dotenv",
