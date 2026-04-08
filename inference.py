@@ -105,8 +105,12 @@ Choose the single best action right now."""
         if "{" in content:
             json_str = content[content.index("{") : content.rindex("}") + 1]
             return json.loads(json_str)
+        else:
+            print(f"[DEBUG] LLM failed to return JSON. Output: {content}", flush=True)
     except Exception as exc:
-        print(f"[DEBUG] LLM request failed: {exc}", flush=True)
+        import traceback
+        print(f"[DEBUG] API/Proxy Error! LLM request failed: {exc}", flush=True)
+        traceback.print_exc()
 
     return fallback_policy(inbox)
 
@@ -182,8 +186,12 @@ def main():
     # Initialize OpenAI client with injected API_BASE_URL and API_KEY
     client = None
     if API_BASE_URL and API_KEY:
-        client = OpenAI(base_url=API_BASE_URL, api_key=API_KEY)
-        print(f"[INFO] Using LLM proxy at {API_BASE_URL}")
+        base_url = API_BASE_URL
+        if not base_url.endswith("/v1") and not base_url.endswith("/v1/"):
+            base_url = base_url.rstrip("/") + "/v1"
+            
+        client = OpenAI(base_url=base_url, api_key=API_KEY)
+        print(f"[INFO] Using LLM proxy configured correctly at {base_url}")
     else:
         print("[INFO] No API_BASE_URL/API_KEY set — using heuristic fallback policy.")
 
