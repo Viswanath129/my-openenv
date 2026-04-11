@@ -67,10 +67,10 @@ async def validation_exception_handler(request, exc):
     """
     error_msg = f"Action Schema Error: {str(exc)}"
     
-    # Force the environment to register a faulty step and negative reward
+    # Register a faulty step with 0.0 reward (failure baseline)
     env.steps += 1
-    env.total_reward -= 0.5
-    env._episode_rewards.append(0.0) # normalized zero for failure
+    env.total_reward += 0.0
+    env._episode_rewards.append(0.0)
     
     # Construct the error observation
     obs = env.state()
