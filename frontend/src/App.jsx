@@ -369,10 +369,10 @@ export default function App() {
                 {/* Stats Row */}
                 <div className="grid grid-cols-2 md:grid-cols-3 gap-4 lg:gap-6">
                   <div className="bg-surface-container-lowest p-5 lg:p-6 rounded-2xl flex flex-col justify-between shadow-sm border-b-4 border-primary">
-                    <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Total Rewards</span>
+                    <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Reward</span>
                     <div className="flex items-end gap-2 mt-2">
-                      <p className="font-headline text-3xl lg:text-4xl font-extrabold text-on-surface">{score.toFixed(2)}</p>
-                      {lastReward && <span className={`text-xs font-bold mb-1 animate-bounce ${lastReward.value >= 0 ? 'text-emerald-500' : 'text-red-500'}`}>{lastReward.value > 0 ? '+' : ''}{lastReward.value.toFixed(1)}</span>}
+                      <p className="font-headline text-3xl lg:text-4xl font-extrabold text-on-surface">{lastReward ? lastReward.value.toFixed(2) : '0.00'}</p>
+                      <span className="text-[10px] font-bold text-slate-400 mb-1.5">/ 1.00</span>
                     </div>
                   </div>
                   <div className="bg-surface-container-lowest p-5 lg:p-6 rounded-2xl flex flex-col justify-between shadow-sm">
@@ -560,9 +560,9 @@ export default function App() {
               <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
                 <div className="md:col-span-2 bg-surface-container-lowest p-8 rounded-[32px] shadow-sm flex flex-col justify-between border-b-4 border-primary">
                   <div>
-                    <span className="text-primary font-headline font-black text-[10px] uppercase tracking-widest">Total ROI Realized</span>
+                    <span className="text-primary font-headline font-black text-[10px] uppercase tracking-widest">Average Reward</span>
                     <div className="flex items-baseline gap-2 mt-2">
-                       <h3 className="text-5xl font-black font-headline text-slate-800">{score.toFixed(2)} <span className="text-2xl text-slate-400">pts</span></h3>
+                       <h3 className="text-5xl font-black font-headline text-slate-800">{logs.length > 0 ? (logs.reduce((a, l) => a + l.reward, 0) / logs.length).toFixed(2) : '0.00'} <span className="text-2xl text-slate-400">/ 1.00</span></h3>
                     </div>
                   </div>
                 </div>
