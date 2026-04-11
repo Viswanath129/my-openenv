@@ -35,8 +35,8 @@ export default function App() {
   const [accounts, setAccounts] = useState([]);
   const [selectedId, setSelectedId] = useState(null);
   const [score, setScore] = useState(0);
-  const [isAuto, setIsAuto] = useState(false);
-  const [isRunning, setIsRunning] = useState(false);
+  const [isAuto, setIsAuto] = useState(true);
+  const [isRunning, setIsRunning] = useState(true);
   const [simSpeed, setSimSpeed] = useState(8000);
   const [logs, setLogs] = useState([]);
   const [showAddAccount, setShowAddAccount] = useState(false);
@@ -209,7 +209,23 @@ export default function App() {
     }
   }, [selectedId]);
 
-  useEffect(() => { fetchAccounts(); fetchClassifierStats(); }, []);
+  useEffect(() => { 
+    fetchAccounts(); 
+    fetchClassifierStats();
+    // Auto-launch demo if no accounts exist on load
+    const checkAndLaunch = async () => {
+      try {
+        const res = await fetch(`${API_URL}/accounts`);
+        if (res.ok) {
+          const data = await res.json();
+          if (!data.accounts || data.accounts.length === 0) {
+            launchDemo();
+          }
+        }
+      } catch (e) {}
+    };
+    checkAndLaunch();
+  }, []);
 
   useEffect(() => {
     if (isRunning) {
@@ -247,7 +263,7 @@ export default function App() {
   const selectedEmail = emails.find((e) => e.id === selectedId);
 
   return (
-    <div className="flex flex-col lg:flex-row bg-surface text-on-surface overflow-hidden" style={{ fontFamily: '"Times New Roman", Times, serif' }}>
+    <div className="flex flex-col lg:flex-row bg-surface text-on-surface h-screen w-screen overflow-hidden" style={{ fontFamily: '"Times New Roman", Times, serif' }}>
       
       {/* SIDEBAR - Responsive stack on mobile, 64px width on desktop */}
       <aside className="w-full lg:w-72 bg-surface-container-lowest shrink-0 lg:h-full lg:overflow-y-auto border-b lg:border-r border-slate-200 z-50 flex flex-col hide-scrollbar">
@@ -293,15 +309,19 @@ export default function App() {
 
           <div className="bg-white border border-slate-200 p-5 rounded-2xl shadow-sm text-slate-800">
             {(() => {
-              // Derive RL Generation from BACKEND stats (persist across refresh), not client state
+              // Derive RL Generation from BACKEND stats (accuracy + classified volume)
               const cls = classifierStats?.live_classifier;
               const totalClassified = cls?.total_classified || 0;
-              const avgReward = cls?.avg_reward_last_50 || 0;
+              const accuracy = cls?.accuracy || 0;
               const isTrained = cls?.model_trained || false;
-              // Generation tiers based on server-persisted intelligence maturity
-              const currentGen = (isTrained && totalClassified > 100000 && avgReward > 10) ? "3rd"
-                : (isTrained && totalClassified > 50000) ? "2nd"
+              
+              // Generation tiers sensitized to real-time accuracy
+              const currentGen = (isTrained && accuracy > 0.98 && totalClassified > 100000) ? "3rd"
+                : (isTrained && accuracy > 0.90 && totalClassified > 50000) ? "2nd"
                 : "1st";
+              
+              const accuracyDisplay = accuracy > 0 ? (accuracy * 100).toFixed(2) : '0.00';
+              
               return (
                 <>
                   <div className="flex items-center justify-between mb-3">
@@ -316,24 +336,22 @@ export default function App() {
                     <div className="bg-slate-50 rounded-xl p-3 border border-slate-100">
                       <p className="text-[9px] text-slate-500 font-bold mb-1">Accuracy</p>
                       <p className="text-lg font-headline font-black text-emerald-500">
-                        {classifierStats?.live_classifier?.accuracy
-                          ? `${(classifierStats.live_classifier.accuracy * 100).toFixed(2)}%`
-                          : '0.00%'}
+                        {accuracyDisplay}%
                       </p>
                     </div>
                     <div className="bg-slate-50 rounded-xl p-3 border border-slate-100">
                       <p className="text-[9px] text-slate-500 font-bold mb-1">Classified</p>
                       <p className="text-lg font-headline font-black text-blue-500">
-                        {(classifierStats?.live_classifier?.total_classified || 0).toLocaleString()}
+                        {totalClassified.toLocaleString()}
                       </p>
                     </div>
                   </div>
                   {showStats && classifierStats?.live_classifier && (
                     <div className="mt-4 pt-3 border-t border-slate-100 space-y-2 text-[10px] font-headline">
                       <div className="flex justify-between text-slate-600"><span>RL Generation</span><span className="font-bold text-primary flex items-center gap-1"><Zap size={10} className="fill-primary text-primary" />{currentGen} (Active)</span></div>
-                      <div className="flex justify-between text-slate-600"><span>Model Trained</span><span className={classifierStats.live_classifier.model_trained ? "text-emerald-500 font-bold" : "text-red-500"}>{classifierStats.live_classifier.model_trained ? 'Yes' : 'No'}</span></div>
-                      <div className="flex justify-between text-slate-600"><span>Vocab Size</span><span className="font-bold text-slate-800">{classifierStats.live_classifier.vocab_size?.toLocaleString()}</span></div>
-                      <div className="flex justify-between text-slate-600"><span>Avg Reward (L50)</span><span className="font-bold text-slate-800">{classifierStats.live_classifier.avg_reward_last_50}</span></div>
+                      <div className="flex justify-between text-slate-600"><span>Model Trained</span><span className={isTrained ? "text-emerald-500 font-bold" : "text-red-500"}>{isTrained ? 'Yes' : 'No'}</span></div>
+                      <div className="flex justify-between text-slate-600"><span>Vocab Size</span><span className="font-bold text-slate-800">{cls.vocab_size?.toLocaleString()}</span></div>
+                      <div className="flex justify-between text-slate-600"><span>Avg Reward (L50)</span><span className="font-bold text-slate-800">{cls.avg_reward_last_50}</span></div>
                     </div>
                   )}
                 </>
@@ -359,7 +377,7 @@ export default function App() {
       </aside>
 
       {/* MAIN VIEW AREA */}
-      <main className="flex-1 flex flex-col min-w-0 bg-surface lg:h-full lg:overflow-hidden relative">
+      <main className="flex-1 flex flex-col min-w-0 bg-surface h-full overflow-hidden relative">
         <header className="px-4 lg:px-8 py-3 lg:py-5 border-b border-slate-200 bg-white/80 backdrop-blur-md flex justify-between items-center shrink-0 z-40 sticky top-0">
           <div className="flex items-center gap-4">
             <span className="text-sm font-black text-primary font-headline uppercase tracking-widest hidden sm:inline-block">InboxIQ / RL Engine V3.0</span>
@@ -378,7 +396,7 @@ export default function App() {
           </div>
         </header>
 
-        <div className="flex-1 overflow-y-auto p-4 lg:p-8 relative scroll-smooth h-full">
+        <div className="flex-1 overflow-y-auto p-4 lg:p-8 relative scroll-smooth min-h-0">
           {activeTab === 'feed' && (
             <div className="grid grid-cols-1 md:grid-cols-12 gap-6 lg:gap-8 pb-10">
               {/* FEED SECTION */}
@@ -600,7 +618,11 @@ export default function App() {
                   <div>
                     <span className="text-primary-fixed-dim font-headline font-black text-[10px] uppercase tracking-widest">AI Precision Rate</span>
                      <div className="mt-2">
-                       <h3 className="text-4xl font-black font-headline text-white">{(score > 0 ? 85.4 + Math.min(score, 14.5) : 85.4).toFixed(1)}%</h3>
+                       <h3 className="text-4xl font-black font-headline text-white">
+                         {classifierStats?.live_classifier?.accuracy 
+                           ? (classifierStats.live_classifier.accuracy * 100).toFixed(1) 
+                           : (85.4 + (score * 10)).toFixed(1)}%
+                       </h3>
                      </div>
                   </div>
                   <p className="text-[10px] text-primary-fixed-dim font-headline font-bold">Real-time adaptive layer is hot</p>
