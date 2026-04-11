@@ -13,8 +13,16 @@ from typing import List, Dict, Optional
 
 try:
     from server.classifier import EmailClassifier, analyze_sentiment, detect_urgency
+    from server.models import Action, Observation, State
 except ImportError:
     from .classifier import EmailClassifier, analyze_sentiment, detect_urgency
+    from .models import Action, Observation, State
+
+try:
+    from openenv.core.env_server.interfaces import Environment
+except ImportError:
+    # Fallback if OpenEnv not installed
+    Environment = object
 
 SENTIMENTS = ["Aggressive", "Professional", "Casual"]
 
@@ -52,6 +60,9 @@ class EmailEnv:
         grader() → normalized score [0.0, 1.0]
     """
 
+    # Enable concurrent sessions since state is isolated per instance
+    SUPPORTS_CONCURRENT_SESSIONS = True
+
     # Task configs: (initial_emails, max_steps, optimal_reward_estimate)
     TASK_CONFIG = {
         "task1": {"count": 1, "max_steps": 5, "optimal": 3.0},
@@ -69,6 +80,8 @@ class EmailEnv:
         self.dataset_path = dataset_path or _DEFAULT_DATASET
         self.raw_data: List[Dict] = []
         self._episode_rewards: List[float] = []
+        self.initial_email_count: int = 0  # Track initial inbox size for progress
+        self.processed_emails: int = 0  # Track emails processed correctly
 
         # ML classifier for intelligent grading
         self.classifier = EmailClassifier(dataset_path=self.dataset_path)
@@ -140,23 +153,51 @@ class EmailEnv:
             "wait": 0,
         }
 
-    def reset(self, task: str = "train") -> Dict:
+    def reset(
+        self,
+        seed: Optional[int] = None,
+        episode_id: Optional[str] = None,
+        task: str = "train",
+    ) -> Observation:
         """Reset the environment for a new episode. Returns the initial observation."""
         self.total_reward = 0.0
         self.steps = 0
         self.current_task = task
         self._episode_rewards = []
+
+        if seed is not None:
+            random.seed(seed)
+
         import uuid
-        self.episode_id = str(uuid.uuid4())
+
+        self.episode_id = episode_id or str(uuid.uuid4())
 
         cfg = self.TASK_CONFIG.get(task, self.TASK_CONFIG["train"])
         self.max_steps = cfg["max_steps"]
         count = cfg["count"]
         self.inbox = [
-            self._get_random_email(is_train=(task in ["train", "task1", "task2", "task3"]))
+            self._get_random_email(
+                is_train=(task in ["train", "task1", "task2", "task3"])
+            )
             for _ in range(count)
         ]
-        return self.state()
+        self.initial_email_count = len(self.inbox)
+        self.processed_emails = 0
+
+        # Reset rubric if present
+        self._reset_rubric()
+
+        return self._create_observation()
+
+    def _is_correct_action(self, email: Dict, action_type: str) -> bool:
+        """Determine if the action is correct for the given email."""
+        is_spam = email.get("type") == "SPAM" or (email.get("ground_truth", 0) == 1)
+
+        if is_spam:
+            return action_type == "delete"
+        else:
+            # For legitimate emails, opening or escalating is generally correct
+            return action_type in ["open", "escalate"]
 
     def complex_grader(self, email: Dict, action_type: str) -> float:
         """
@@ -187,7 +228,10 @@ class EmailEnv:
         # ── Sentiment bonus ──
         if email.get("sentiment") == "Aggressive" and action_type == "escalate":
             reward += 3.0
-        elif email.get("sentiment") == "Aggressive" and action_type not in ["escalate", "open"]:
+        elif email.get("sentiment") == "Aggressive" and action_type not in [
+            "escalate",
+            "open",
+        ]:
             reward -= 2.0
 
         # ── Urgency bonus ──
@@ -213,11 +257,33 @@ class EmailEnv:
 
         target_email = next((e for e in self.inbox if e["id"] == email_id), None)
         step_reward = -0.1  # Small cost per step (penalizes infinite loops)
+        
+        # Track observation telemetry for this step
+        step_error_trace = None
+        current_step_feedback = None
 
         if target_email:
             step_reward += self.complex_grader(target_email, action_type)
             if action_type in ["open", "delete", "escalate"]:
                 self.inbox = [e for e in self.inbox if e["id"] != email_id]
+                # Track correct processing
+                is_correct_action = self._is_correct_action(target_email, action_type)
+                if is_correct_action:
+                    self.processed_emails += 1
+            current_step_feedback = f"Action '{action_type}' successfully executed on {email_id}."
+        else:
+            # Graceful System Degradation: intercept hallucinated IDs mathematically
+            if email_id and email_id.lower() != "none":
+                step_error_trace = f"InvalidTargetError: Action '{action_type}' failed. Identifier '{email_id}' does not exist in inbox."
+                step_reward -= 0.5  # minor negative penalty for hallucination
+            else:
+                current_step_feedback = "Deferred action; no target specified."
+
+        # Add progress-based rewards for investigative loop
+        if self.initial_email_count > 0:
+            progress_ratio = self.processed_emails / self.initial_email_count
+            progress_reward = progress_ratio * 0.5  # Up to 0.5 bonus for full progress
+            step_reward += progress_reward
 
         # Tick wait counters for remaining emails
         for email in self.inbox:
@@ -229,20 +295,29 @@ class EmailEnv:
                 self._get_random_email(is_train=(self.current_task != "eval"))
             )
 
-        # ── Completion Bonus ──
-        if done and len(self.inbox) == 0:
-            bonus = 10.0
-            step_reward += bonus
-            
         # Normalize reward to [0.0, 1.0] range per OpenEnv specification
-        # Max possible per-step reward is around 20.0 (spam delete + bonuses + completion)
-        normalized_reward = max(0.0, min(1.0, (step_reward + 10.0) / 30.0))
-        
+        # Max possible per-step reward is around 10.0 (spam delete + bonuses)
+        normalized_reward = max(0.0, min(1.0, (step_reward + 10.0) / 20.0))
+
         self.total_reward += step_reward
         self._episode_rewards.append(normalized_reward)
         self.steps += 1
         done = self.steps >= self.max_steps or (len(self.inbox) == 0 and self.steps > 1)
 
+        # ── Completion Bonus ──
+        if done and len(self.inbox) == 0:
+            bonus = 10.0
+            step_reward += bonus
+            self.total_reward += bonus
+
+        # Apply rubric if present
+        rubric_reward = self._apply_rubric(
+            action, None
+        )  # We don't have observation yet
+        if rubric_reward != 0.0:
+            normalized_reward = max(0.0, min(1.0, normalized_reward + rubric_reward))
+
+        obs = self.state()
         info = {
             "total": round(self.total_reward, 2),
             "classifier_stats": self.classifier.stats,
@@ -252,26 +327,45 @@ class EmailEnv:
             gs = self.grader()
             info["grader_score"] = max(0.0, min(1.0, gs))
 
-        return self.state(), normalized_reward, done, info
+        return obs, normalized_reward, done, info
 
     def grader(self) -> float:
         """
-        Normalize episode total reward to [0.0, 1.0].
+        Normalize episode total reward to [0.0, 1.0] with partial progress credit.
+        Includes efficiency bonus for completing tasks with fewer steps.
         Deterministic given the same episode trajectory.
-        Maps: worst possible → 0.0, optimal → 1.0
         """
         cfg = self.TASK_CONFIG.get(self.current_task, self.TASK_CONFIG["train"])
         optimal = cfg["optimal"]
         worst = -optimal * 1.5
 
+        # Base score from total reward
         if optimal == worst:
-            return 0.5
+            base_score = 0.5
+        else:
+            raw = (self.total_reward - worst) / (optimal - worst)
+            base_score = min(max(raw, 0.0), 1.0)
 
-        raw = (self.total_reward - worst) / (optimal - worst)
-        clamped = min(max(raw, 0.0), 1.0)
-        # Clamp to [0.0, 1.0] range per OpenEnv specification
-        clamped = max(0.0, min(1.0, clamped))
-        return round(clamped, 4)
+        # Progress bonus: reward for processing emails correctly
+        progress_score = 0.0
+        if self.initial_email_count > 0:
+            progress_ratio = self.processed_emails / self.initial_email_count
+            progress_score = (
+                progress_ratio * 0.3
+            )  # Up to 30% bonus for perfect processing
+
+        # Efficiency bonus: reward for completing quickly
+        efficiency_score = 0.0
+        if self.steps > 0 and self.initial_email_count > 0:
+            expected_steps = self.initial_email_count * 1.5  # Expected steps per email
+            efficiency_ratio = min(expected_steps / self.steps, 1.0)
+            efficiency_score = efficiency_ratio * 0.2  # Up to 20% bonus for efficiency
+
+        # Combine scores
+        final_score = base_score + progress_score + efficiency_score
+        final_score = max(0.0, min(1.0, final_score))
+
+        return round(final_score, 4)
 
     def state(self) -> Dict:
         """Return the current environment state as an observation dict."""
@@ -289,3 +383,28 @@ class EmailEnv:
             "total_reward": round(self.total_reward, 2),
             "classifier_stats": self.classifier.stats,
         }
+
+    def _create_observation(
+        self, reward: float = 0.0, done: bool = False
+    ) -> Observation:
+        """Create an Observation object from current state."""
+        info = {
+            "total": round(self.total_reward, 2),
+            "classifier_stats": self.classifier.stats,
+        }
+
+        if done:
+            gs = self.grader()
+            info["grader_score"] = max(0.01, min(0.99, gs))
+
+        return Observation(
+            inbox=self.inbox,
+            steps=self.steps,
+            task=self.current_task,
+            max_steps=self.max_steps,
+            total_reward=round(self.total_reward, 2),
+            classifier_stats=self.classifier.stats,
+            reward=reward,
+            done=done,
+            info=info,
+        )

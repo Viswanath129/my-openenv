@@ -39,6 +39,7 @@ TASKS = [
 # Helpers
 # ══════════════════════════════════════
 
+
 def format_bool(x: bool) -> str:
     return "true" if x else "false"
 
@@ -56,6 +57,7 @@ def grade_task(correct: bool) -> float:
 # ══════════════════════════════════════
 # Structured logging per OpenEnv spec
 # ══════════════════════════════════════
+
 
 def log_start(task: str, env: str, model: str):
     print(f"[START] task={task} env={env} model={model}", flush=True)
@@ -84,17 +86,16 @@ def log_end(success: bool, steps: int, score: float, rewards: List[float]):
 # LLM-based action selection
 # ══════════════════════════════════════
 
-def get_action_from_llm(
-    client: OpenAI, inbox: list, step: int, history: list
-) -> dict:
+
+def get_action_from_llm(client: OpenAI, inbox: list, step: int, history: list) -> dict:
     """Ask the LLM to choose an action for the current inbox state."""
     if not inbox:
         return {"action_type": "defer", "email_id": "none"}
 
     inbox_desc = "\n".join(
-        f"  [{i+1}] id={e['id']} type={e.get('type','?')} urgency={e.get('urgency','?')} "
-        f"sentiment={e.get('sentiment','?')} spam_score={e.get('spam_score',0):.2f} wait={e.get('wait',0)} "
-        f"subject=\"{e.get('subject','')[:40]}\""
+        f"  [{i + 1}] id={e['id']} type={e.get('type', '?')} urgency={e.get('urgency', '?')} "
+        f"sentiment={e.get('sentiment', '?')} spam_score={e.get('spam_score', 0):.2f} wait={e.get('wait', 0)} "
+        f'subject="{e.get("subject", "")[:40]}"'
         for i, e in enumerate(inbox)
     )
 
@@ -132,10 +133,19 @@ Choose the single best action right now."""
             json_str = content[content.index("{") : content.rindex("}") + 1]
             return json.loads(json_str)
         else:
-            print(f"[DEBUG] LLM failed to return JSON. Output: {content}", file=sys.stderr, flush=True)
+            print(
+                f"[DEBUG] LLM failed to return JSON. Output: {content}",
+                file=sys.stderr,
+                flush=True,
+            )
     except Exception as exc:
         import traceback
-        print(f"[DEBUG] API/Proxy Error! LLM request failed: {exc}", file=sys.stderr, flush=True)
+
+        print(
+            f"[DEBUG] API/Proxy Error! LLM request failed: {exc}",
+            file=sys.stderr,
+            flush=True,
+        )
         traceback.print_exc()
 
     return fallback_policy(inbox)
@@ -204,6 +214,7 @@ def http_get(url: str) -> dict:
 # Main
 # ══════════════════════════════════════
 
+
 def main():
     print("=" * 60, file=sys.stderr, flush=True)
     print("  InboxIQ — OpenEnv Inference Benchmark", file=sys.stderr, flush=True)
@@ -214,7 +225,11 @@ def main():
         base_url=API_BASE_URL,
         api_key=API_KEY,
     )
-    print(f"[INFO] OpenAI client configured: base_url={API_BASE_URL}", file=sys.stderr, flush=True)
+    print(
+        f"[INFO] OpenAI client configured: base_url={API_BASE_URL}",
+        file=sys.stderr,
+        flush=True,
+    )
     print(f"[INFO] Model: {MODEL_NAME}", file=sys.stderr, flush=True)
 
     # ──────────────────────────────────────────────────────────────
@@ -222,7 +237,11 @@ def main():
     # request flows through the proxy, satisfying the validator.
     # This runs BEFORE any env interaction so it cannot be skipped.
     # ──────────────────────────────────────────────────────────────
-    print("[INFO] Making mandatory warm-up LLM call through proxy...", file=sys.stderr, flush=True)
+    print(
+        "[INFO] Making mandatory warm-up LLM call through proxy...",
+        file=sys.stderr,
+        flush=True,
+    )
     try:
         warmup = client.chat.completions.create(
             model=MODEL_NAME,
@@ -231,7 +250,11 @@ def main():
             temperature=0.0,
         )
         warmup_reply = warmup.choices[0].message.content.strip()
-        print(f"[INFO] Warm-up LLM call succeeded: {warmup_reply}", file=sys.stderr, flush=True)
+        print(
+            f"[INFO] Warm-up LLM call succeeded: {warmup_reply}",
+            file=sys.stderr,
+            flush=True,
+        )
     except Exception as e:
         print(f"[WARNING] Warm-up LLM call failed: {e}", file=sys.stderr, flush=True)
         # Continue anyway — the attempt itself should register with the proxy.
@@ -261,12 +284,15 @@ def main():
 
                 result = http_post(f"{ENV_URL}/step", data=action)
 
+                # Extract tuple components from StepResult
                 obs = result.get("observation", result)
                 reward = clamp_score(result.get("reward", 0.0))
                 done = result.get("done", False)
 
                 action_str = f"{action['action_type']}_{action['email_id']}"
-                log_step(step=step, action=action_str, reward=reward, done=done, error=None)
+                log_step(
+                    step=step, action=action_str, reward=reward, done=done, error=None
+                )
 
                 rewards.append(reward)
                 history.append(f"Step {step}: {action_str} → reward {reward:+.2f}")
@@ -279,10 +305,16 @@ def main():
 
         except Exception as e:
             # ── Environment unavailable — emit honest error logs ──
-            print(f"[DEBUG] Env error for {task_id}: {e}. Environment unreachable.", file=sys.stderr, flush=True)
-            
+            print(
+                f"[DEBUG] Env error for {task_id}: {e}. Environment unreachable.",
+                file=sys.stderr,
+                flush=True,
+            )
+
             # Emit honest failure instead of fake rewards
-            log_step(step=1, action="none", reward=0.0, done=True, error="env_unavailable")
+            log_step(
+                step=1, action="none", reward=0.0, done=True, error="env_unavailable"
+            )
             log_end(success=False, steps=0, score=0.0, rewards=[])
             print("-" * 50, file=sys.stderr, flush=True)
             continue  # Skip to next task

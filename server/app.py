@@ -19,11 +19,14 @@ import os
 from dotenv import load_dotenv
 from pydantic import BaseModel
 from typing import Dict, Optional
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
 
 
 def _clamp_score(v: float) -> float:
     """Clamp to [0.0, 1.0] range per OpenEnv specification."""
     return max(0.0, min(1.0, v))
+
 
 try:
     from server.environment import EmailEnv
@@ -56,10 +59,42 @@ app.add_middleware(
 # ── RL Environment ──
 env = EmailEnv()
 
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request, exc):
+    """
+    Gracefully handles action schema hallucinations by the OpenEnv agents.
+    If the agent submits a malformed Action, penalty is applied but episode continues.
+    """
+    error_msg = f"Action Schema Error: {str(exc)}"
+    
+    # Force the environment to register a faulty step and negative reward
+    env.steps += 1
+    env.total_reward -= 0.5
+    env._episode_rewards.append(0.0) # normalized zero for failure
+    
+    # Construct the error observation
+    obs = env.state()
+    obs["error_trace"] = error_msg
+    obs["step_feedback"] = "Invalid action parameters provided. Learn the schema."
+    
+    # Wrap in the mandatory StepResponse/StepResult schema format expected by OpenEnv
+    response_payload = {
+        "observation": obs,
+        "reward": 0.0,
+        "done": env.steps >= env.max_steps,
+        "info": {}
+    }
+    
+    return JSONResponse(status_code=200, content=response_payload)
+
 # ── Standalone classifier for classification endpoint ──
 _dataset_path = None
 for candidate in [
-    os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "dataset", "spam_assassin.csv"),
+    os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+        "dataset",
+        "spam_assassin.csv",
+    ),
     "/app/dataset/spam_assassin.csv",
     "dataset/spam_assassin.csv",
 ]:
@@ -90,7 +125,9 @@ connected_accounts: Dict[str, str] = {}
 
 
 # ── Static Files & Frontend ──
-frontend_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "frontend", "dist")
+frontend_path = os.path.join(
+    os.path.dirname(os.path.dirname(__file__)), "frontend", "dist"
+)
 
 if os.path.isdir(frontend_path):
     assets_dir = os.path.join(frontend_path, "assets")
@@ -107,7 +144,9 @@ if os.path.isdir(frontend_path):
         if os.path.exists(icon_path):
             return FileResponse(icon_path, media_type="image/png")
         # Fallback to root-level copy
-        root_icon = os.path.join(os.path.dirname(os.path.dirname(__file__)), "InboxIQ.png")
+        root_icon = os.path.join(
+            os.path.dirname(os.path.dirname(__file__)), "InboxIQ.png"
+        )
         if os.path.exists(root_icon):
             return FileResponse(root_icon, media_type="image/png")
         raise HTTPException(status_code=404, detail="Icon not found")
@@ -119,6 +158,7 @@ if os.path.isdir(frontend_path):
             return FileResponse(fav_path, media_type="image/svg+xml")
         raise HTTPException(status_code=404, detail="Favicon not found")
 else:
+
     @app.get("/")
     def root():
         return RedirectResponse(url="/docs")
@@ -127,6 +167,7 @@ else:
 # ══════════════════════════════════════════════════════════════════════════════
 # OpenEnv Core Endpoints
 # ══════════════════════════════════════════════════════════════════════════════
+
 
 @app.post("/reset", response_model=Observation)
 def reset(task: str = "train"):
@@ -138,13 +179,30 @@ def reset(task: str = "train"):
 def step(action: Action):
     """Execute one action and return (observation, reward, done, info)."""
     obs, reward, done, info = env.step(action.model_dump())
-    return {"observation": obs, "reward": _clamp_score(reward), "done": done, "info": info}
+    return {
+        "observation": obs,
+        "reward": _clamp_score(reward),
+        "done": done,
+        "info": info
+    }
 
 
 @app.get("/state")
 def state():
     """Return the current environment state."""
     return env.state()
+
+
+@app.get("/health")
+def health():
+    """Health check endpoint for Docker and monitoring."""
+    return {"status": "healthy", "environment": "InboxIQ"}
+
+
+@app.get("/health")
+def health():
+    """Health check endpoint for Docker and Hugging Face."""
+    return {"status": "ok"}
 
 
 @app.get("/grader")
@@ -160,6 +218,7 @@ def grader():
 # ══════════════════════════════════════════════════════════════════════════════
 # ML Classification Endpoints
 # ══════════════════════════════════════════════════════════════════════════════
+
 
 @app.post("/classify")
 def classify_email(req: ClassifyRequest):
@@ -188,6 +247,7 @@ def classifier_stats():
 # Account & Live Email Endpoints
 # ══════════════════════════════════════════════════════════════════════════════
 
+
 @app.get("/accounts")
 def list_accounts():
     """List all connected IMAP accounts."""
@@ -206,8 +266,13 @@ def add_account(req: AccountRequest):
     # Fast bypass: If network is unreachable or auth fails, we drop into Demo Mode automatically!
     if not success:
         connected_accounts[req.username] = "demo-pass"
-        return {"status": "connected", "username": req.username, "is_demo": True, "notice": "Fell back to simulation mode"}
-    
+        return {
+            "status": "connected",
+            "username": req.username,
+            "is_demo": True,
+            "notice": "Fell back to simulation mode",
+        }
+
     connected_accounts[req.username] = req.password
     return {"status": "connected", "username": req.username}
 
@@ -217,56 +282,94 @@ def get_live_inbox():
     """Fetch recent emails from all accounts and classify them."""
     all_emails = []
     import time
+
     for user, pwd in connected_accounts.items():
         if pwd == "demo-pass":
             # ── Simulated 'Live' Inbox for Demo Mode (Randomized) ──
             pool = [
-                {"sender": "hr@corporation.com", "subject": "Action Required: Complete your mandatory compliance training"},
-                {"sender": "alerts@aws.amazon.com", "subject": "AWS Budget Alert: Monthly threshold exceeded"},
-                {"sender": "newsletter@marketing.io", "subject": "10 best practices for maximizing your workflow"},
-                {"sender": "boss@company.tech", "subject": "Can we sync up later today? Need your input on the Q3 roadmap"},
-                {"sender": "noreply@github.com", "subject": "[Repo/Core] Urgent Security Vulnerability Detected (Dependabot)"},
-                {"sender": "promo@deal-hub.com", "subject": "URGENT: Your free claim prize inside! Click now"},
-                {"sender": "client.contact@external.io", "subject": "Checking in: Revisions to the updated project proposal?"},
-                {"sender": "support@cloud-platform.io", "subject": "CRITICAL: Service degradation report — ticket #4512"},
-                {"sender": "lunch-club@office.net", "subject": "Pizza in the breakroom at 12!"},
-                {"sender": "scam.alert@baddomain.biz", "subject": "Your Bank Account is Frozen - Reset Password Now"}
+                {
+                    "sender": "hr@corporation.com",
+                    "subject": "Action Required: Complete your mandatory compliance training",
+                },
+                {
+                    "sender": "alerts@aws.amazon.com",
+                    "subject": "AWS Budget Alert: Monthly threshold exceeded",
+                },
+                {
+                    "sender": "newsletter@marketing.io",
+                    "subject": "10 best practices for maximizing your workflow",
+                },
+                {
+                    "sender": "boss@company.tech",
+                    "subject": "Can we sync up later today? Need your input on the Q3 roadmap",
+                },
+                {
+                    "sender": "noreply@github.com",
+                    "subject": "[Repo/Core] Urgent Security Vulnerability Detected (Dependabot)",
+                },
+                {
+                    "sender": "promo@deal-hub.com",
+                    "subject": "URGENT: Your free claim prize inside! Click now",
+                },
+                {
+                    "sender": "client.contact@external.io",
+                    "subject": "Checking in: Revisions to the updated project proposal?",
+                },
+                {
+                    "sender": "support@cloud-platform.io",
+                    "subject": "CRITICAL: Service degradation report — ticket #4512",
+                },
+                {
+                    "sender": "lunch-club@office.net",
+                    "subject": "Pizza in the breakroom at 12!",
+                },
+                {
+                    "sender": "scam.alert@baddomain.biz",
+                    "subject": "Your Bank Account is Frozen - Reset Password Now",
+                },
             ]
             import random
             import uuid
+
             # Slowing down the simulation rate to feel like normal realistic mail volume
             selected = random.sample(pool, 1)
             raw_emails = []
             for idx, e in enumerate(selected):
                 offset = random.randint(10000, 1500000)
-                raw_emails.append({
-                    "id": f"demo-{uuid.uuid4().hex[:6]}",
-                    "sender": e["sender"],
-                    "subject": e["subject"],
-                    "createdAt": int(time.time() * 1000) - offset
-                })
+                raw_emails.append(
+                    {
+                        "id": f"demo-{uuid.uuid4().hex[:6]}",
+                        "sender": e["sender"],
+                        "subject": e["subject"],
+                        "createdAt": int(time.time() * 1000) - offset,
+                    }
+                )
         else:
             raw_emails = fetch_live_emails(user, pwd)
-        
+
         for email_data in raw_emails:
             # Classify using the ML pipeline
             classification = live_classifier.classify(email_data["subject"])
-            email_data.update({
-                "type": classification["type"],
-                "urgency": classification["urgency"],
-                "sentiment": classification["sentiment"],
-                "confidence": classification["confidence"],
-                "spam_score": classification["spam_score"],
-            })
+            email_data.update(
+                {
+                    "type": classification["type"],
+                    "urgency": classification["urgency"],
+                    "sentiment": classification["sentiment"],
+                    "confidence": classification["confidence"],
+                    "spam_score": classification["spam_score"],
+                }
+            )
             all_emails.append(email_data)
-    
+
     return {"emails": all_emails}
 
 
 def main():
     import uvicorn
+
     port = int(os.environ.get("PORT", 7860))
     uvicorn.run("server.app:app", host="0.0.0.0", port=port, reload=True)
+
 
 # ── Direct execution ──
 if __name__ == "__main__":
