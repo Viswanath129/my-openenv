@@ -208,24 +208,23 @@ class EmailEnv:
         if "ground_truth" in email:
             is_spam = email["ground_truth"] == 1
 
-        confidence = email.get("confidence", 0.5)
         urgency = email.get("urgency", "MEDIUM")
         sentiment = email.get("sentiment", "Professional")
 
         # Action-specific reward mapping with reachable per-email optimum of 1.0
         if action_type == "delete":
             if is_spam:
-                reward = 0.85 + (0.15 * confidence)
+                reward = 1.0
             else:
                 reward = 0.0  # CRITICAL: Deleting real mail = total failure
         elif action_type == "open":
             if not is_spam:
-                reward = 0.8 + (0.2 * confidence)
+                reward = 1.0
             else:
                 reward = 0.05  # Opening spam = near-failure
         elif action_type == "escalate":
             if (urgency == "HIGH" or sentiment == "Aggressive") and not is_spam:
-                reward = 0.85 + (0.15 * confidence)
+                reward = 1.0
             elif not is_spam:
                 reward = 0.55  # Unnecessary escalation on legitimate mail
             else:
@@ -234,7 +233,7 @@ class EmailEnv:
             if urgency == "HIGH":
                 reward = 0.1  # Deferring urgent = bad
             else:
-                reward = 0.35  # Low-urgency defer = acceptable
+                reward = 0.15  # Low-urgency defer = weak but non-zero
         else:
             reward = 0.0  # Unknown action
 
@@ -331,9 +330,13 @@ class EmailEnv:
         theoretical maxima. Negative totals are treated as failure (0.0).
         """
         task_cfg = TASK_REGISTRY.get(self.current_task, TASK_REGISTRY["task1"])
-        initial_count = task_cfg.config.get("count", 1)
-        # Per-step rewards are clamped to [0, 1], so each initial email can max at 1.0.
-        r_max = float(max(1, initial_count))
+        if "reward_ceiling" in task_cfg.config:
+            r_max = float(task_cfg.config["reward_ceiling"])
+        else:
+            initial_count = task_cfg.config.get("count", 1)
+            # Theoretical max assumes perfect first-pass actions with unavoidable wait decay.
+            # Email i (0-indexed) is processed after i wait ticks, so best reward is 0.9**i.
+            r_max = float(sum(0.9**i for i in range(max(1, initial_count))))
         if r_max <= 0.0:
             return 0.0
 

@@ -109,8 +109,7 @@ The reward function provides **incremental feedback throughout the trajectory**,
 | ⚠️ Deferred / No Target | `0.05 – 0.1` | Defer or act on missing email |
 | ❌ Deleted Real Email | `0.0` | Critical error — deleting legitimate mail |
 | ❌ Failed Spam Detection | `0.05` | Not deleting identified spam |
-| 🕐 Wait Decay | `reward × 0.85^wait` | Correct actions lose value when delayed |
-| 🏆 Completion Bonus | `+0.1` | Added to final step if inbox is cleared |
+| 🕐 Wait Decay | `reward × 0.9^wait` | Correct actions lose value when delayed |
 
 > **Every single step reward is strictly constrained to `[0.0, 1.0]`.**
 > There are **no negative rewards** in InboxIQ. Total Failure = `0.0`, Perfect Success = `1.0`.
@@ -121,11 +120,11 @@ The reward function provides **incremental feedback throughout the trajectory**,
 ### 📊 Grading (0.0–1.0)
 The grader normalizes the total episode reward to a score between 0.0 and 1.0 using task-specific theoretical maximums:
 
-| Task | Difficulty | Max Total Reward | Grader Formula |
+| Task | Difficulty | Reward Ceiling | Grader Formula |
 |:-----|:-----------|:-----------------|:---------------|
-| **task1** | Easy | 1.5 | `score = total_reward / 1.5` |
-| **task2** | Medium | 4.0 | `score = total_reward / 4.0` |
-| **task3** | Hard | 8.0 | `score = total_reward / 8.0` |
+| **task1** | Easy | 1.00 | `score = clip(total_reward / 1.00, 0, 1)` |
+| **task2** | Medium | 2.71 | `score = clip(total_reward / 2.71, 0, 1)` |
+| **task3** | Hard | 12.00 | `score = clip(total_reward / 12.00, 0, 1)` |
 
 This provides a **simple, deterministic score** that encourages agents to maximize reward while providing smooth gradients for learning.
 
@@ -171,7 +170,7 @@ def grade_task(self, trajectory) -> float:
 Each task has a **deterministic programmatic grader** that normalizes the total episode reward to a score between `0.0` and `1.0`:
 
 ```
-score = clip((total_reward - worst) / (optimal - worst), 0.0, 1.0)
+score = clip(total_reward / reward_ceiling, 0.0, 1.0)
 ```
 
 The grader is deterministic: identical action trajectories produce identical scores.
@@ -222,16 +221,6 @@ docker build -t inboxiq .
 docker run -p 7860:7860 inboxiq
 ```
 
-### Docker
-
-```bash
-# Build the container
-docker build -t inboxiq .
-
-# Run the container
-docker run -p 7860:7860 inboxiq
-```
-
 ### Frontend (Optional)
 
 ```bash
@@ -252,6 +241,9 @@ InboxIQ fully implements the OpenEnv specification:
 | `/step` | POST | Execute action, returns `(observation, reward, done, info)` |
 | `/state` | GET | Returns current environment state |
 | `/grader` | GET | Returns normalized score `[0.0, 1.0]` |
+| `/metadata` | GET | Returns environment metadata and task list |
+| `/schema` | GET | Returns action/observation/state JSON schemas |
+| `/mcp` | POST | JSON-RPC compatible MCP endpoint |
 
 ### Typed Models (Pydantic)
 - `Action`: Typed with `action_type` and `email_id`.
@@ -262,8 +254,8 @@ InboxIQ fully implements the OpenEnv specification:
 ### Inference Logging Format
 ```
 [START] task=task1 env=InboxIQ model=Qwen/Qwen2.5-72B-Instruct
-[STEP] step=1 action=delete_DB-1234 reward=2.45 done=true error=null
-[END] success=true steps=1 score=1.0000 rewards=2.45
+[STEP] step=1 action=delete_DB-1234 reward=1.00 done=true error=null
+[END] success=true steps=1 score=1.00 rewards=1.00
 ```
 
 ---
@@ -341,7 +333,7 @@ python inference.py
 
 **Expected Outputs:**
 - `[START] task=task1 ...`
-- `[STEP] step=1 ... reward=2.45`
+- `[STEP] step=1 ... reward=1.00`
 - `[END] success=true steps=1 score=1.0000`
 
 ### 3. OpenEnv Validation

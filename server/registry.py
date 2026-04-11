@@ -19,7 +19,14 @@ def calculate_success(trajectory: List[Dict[str, Any]]) -> float:
     task_id = observation.get("task", "task1")
 
     task_cfg = TASK_REGISTRY.get(task_id)
-    r_max = float(max(1, task_cfg.config.get("count", 1))) if task_cfg else 1.0
+    if task_cfg:
+        if "reward_ceiling" in task_cfg.config:
+            r_max = float(task_cfg.config["reward_ceiling"])
+        else:
+            count = max(1, task_cfg.config.get("count", 1))
+            r_max = float(sum(0.9**i for i in range(count)))
+    else:
+        r_max = 1.0
     if r_max <= 0.0:
         return 0.0
 
@@ -50,7 +57,7 @@ TASK_REGISTRY = {
         difficulty="easy",
         prompt="Your inbox contains one email. Analyze its sentiment, urgency, and spam score. Execute the most appropriate action (open, delete, or escalate) to maximize reward.",
         max_steps=5,
-        config={"count": 1},
+        config={"count": 1, "reward_ceiling": 1.0},
     ),
     "task2": Task(
         task_id="task2",
@@ -59,7 +66,7 @@ TASK_REGISTRY = {
         difficulty="medium",
         prompt="You have a backlog of 3 emails. Some are spam, some are urgent work requests. Process all of them efficiently. Remember: deleting a legitimate email is heavily penalized.",
         max_steps=10,
-        config={"count": 3},
+        config={"count": 3, "reward_ceiling": 2.71},
     ),
     "task3": Task(
         task_id="task3",
@@ -68,6 +75,6 @@ TASK_REGISTRY = {
         difficulty="hard",
         prompt="Total Chaos! 5 emails are pending, and more may arrive. Prioritize 'Aggressive' sentiment for escalation and 'HIGH' urgency for immediate opening. Efficiency and accuracy are critical.",
         max_steps=20,
-        config={"count": 5},
+        config={"count": 5, "reward_ceiling": 12.0},
     ),
 }

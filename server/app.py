@@ -223,7 +223,7 @@ def metadata():
     }
 
 
-@app.get("/tasks", response_model=list[Task])
+@app.get("/tasks")
 def tasks():
     """Get metadata for all available tasks."""
     return list(TASK_REGISTRY.values())

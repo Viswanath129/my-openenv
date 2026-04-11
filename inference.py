@@ -91,6 +91,8 @@ def get_action_from_llm(client: OpenAI, inbox: list, step: int, history: list) -
     """Ask the LLM to choose an action for the current inbox state."""
     if not inbox:
         return {"action_type": "defer", "email_id": "none"}
+    if not API_KEY:
+        return fallback_policy(inbox)
 
     inbox_desc = "\n".join(
         f"  [{i + 1}] id={e['id']} type={e.get('type', '?')} urgency={e.get('urgency', '?')} "
@@ -139,14 +141,11 @@ Choose the single best action right now."""
                 flush=True,
             )
     except Exception as exc:
-        import traceback
-
         print(
             f"[DEBUG] API/Proxy Error! LLM request failed: {exc}",
             file=sys.stderr,
             flush=True,
         )
-        traceback.print_exc()
 
     return fallback_policy(inbox)
 
@@ -237,27 +236,36 @@ def main():
     # request flows through the proxy, satisfying the validator.
     # This runs BEFORE any env interaction so it cannot be skipped.
     # ──────────────────────────────────────────────────────────────
-    print(
-        "[INFO] Making mandatory warm-up LLM call through proxy...",
-        file=sys.stderr,
-        flush=True,
-    )
-    try:
-        warmup = client.chat.completions.create(
-            model=MODEL_NAME,
-            messages=[{"role": "user", "content": "Say hello in one short sentence."}],
-            max_tokens=50,
-            temperature=0.0,
-        )
-        warmup_reply = warmup.choices[0].message.content.strip()
+    if API_KEY:
         print(
-            f"[INFO] Warm-up LLM call succeeded: {warmup_reply}",
+            "[INFO] Making mandatory warm-up LLM call through proxy...",
             file=sys.stderr,
             flush=True,
         )
-    except Exception as e:
-        print(f"[WARNING] Warm-up LLM call failed: {e}", file=sys.stderr, flush=True)
-        # Continue anyway — the attempt itself should register with the proxy.
+        try:
+            warmup = client.chat.completions.create(
+                model=MODEL_NAME,
+                messages=[
+                    {"role": "user", "content": "Say hello in one short sentence."}
+                ],
+                max_tokens=50,
+                temperature=0.0,
+            )
+            warmup_reply = warmup.choices[0].message.content.strip()
+            print(
+                f"[INFO] Warm-up LLM call succeeded: {warmup_reply}",
+                file=sys.stderr,
+                flush=True,
+            )
+        except Exception as e:
+            print(f"[WARNING] Warm-up LLM call failed: {e}", file=sys.stderr, flush=True)
+            # Continue anyway — the attempt itself should register with the proxy.
+    else:
+        print(
+            "[INFO] API key not provided; skipping warm-up and using fallback policy.",
+            file=sys.stderr,
+            flush=True,
+        )
 
     # ── Run tasks ──
     for task_cfg in TASKS:
