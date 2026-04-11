@@ -57,6 +57,15 @@ observations:
     total_reward:
       type: number
       description: "Cumulative reward so far in the episode"
+    reward:
+      type: number
+      description: "Reward received for the last action"
+    done:
+      type: boolean
+      description: "Whether the episode has ended"
+    info:
+      type: object
+      description: "Additional information about the step"
 
 grader:
   type: normalized

@@ -9,7 +9,7 @@ InboxIQ RL Environment v3.0
 import os
 import random
 import csv
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Any
 
 try:
     from server.classifier import EmailClassifier, analyze_sentiment, detect_urgency
@@ -157,12 +157,13 @@ class EmailEnv:
         self,
         seed: Optional[int] = None,
         episode_id: Optional[str] = None,
-        task: str = "train",
+        task: Optional[str] = None,
+        **kwargs: Any,
     ) -> Observation:
         """Reset the environment for a new episode. Returns the initial observation."""
         self.total_reward = 0.0
         self.steps = 0
-        self.current_task = task
+        self.current_task = task or kwargs.get("task", "train")
         self._episode_rewards = []
 
         if seed is not None:
@@ -185,7 +186,8 @@ class EmailEnv:
         self.processed_emails = 0
 
         # Reset rubric if present
-        self._reset_rubric()
+        if hasattr(self, "_reset_rubric"):
+            self._reset_rubric()
 
         return self._create_observation()
 
@@ -247,17 +249,17 @@ class EmailEnv:
         self.classifier.record_reward(reward)
         return round(reward, 2)
 
-    def step(self, action: dict) -> tuple:
+    def step(self, action: Action, timeout_s: Optional[float] = None) -> Observation:
         """
         Execute one step in the environment.
-        Returns: (observation, reward, done, info)
+        Returns: Observation with reward, done status, and metadata
         """
-        action_type = action.get("action_type", "defer").lower()
-        email_id = action.get("email_id")
+        action_type = action.action_type.lower()
+        email_id = action.email_id
 
         target_email = next((e for e in self.inbox if e["id"] == email_id), None)
         step_reward = -0.1  # Small cost per step (penalizes infinite loops)
-        
+
         # Track observation telemetry for this step
         step_error_trace = None
         current_step_feedback = None
@@ -270,7 +272,9 @@ class EmailEnv:
                 is_correct_action = self._is_correct_action(target_email, action_type)
                 if is_correct_action:
                     self.processed_emails += 1
-            current_step_feedback = f"Action '{action_type}' successfully executed on {email_id}."
+            current_step_feedback = (
+                f"Action '{action_type}' successfully executed on {email_id}."
+            )
         else:
             # Graceful System Degradation: intercept hallucinated IDs mathematically
             if email_id and email_id.lower() != "none":
@@ -311,23 +315,16 @@ class EmailEnv:
             self.total_reward += bonus
 
         # Apply rubric if present
-        rubric_reward = self._apply_rubric(
-            action, None
-        )  # We don't have observation yet
-        if rubric_reward != 0.0:
-            normalized_reward = max(0.0, min(1.0, normalized_reward + rubric_reward))
+        if hasattr(self, "_apply_rubric"):
+            rubric_reward = self._apply_rubric(
+                action, None
+            )  # We don't have observation yet
+            if rubric_reward != 0.0:
+                normalized_reward = max(
+                    0.0, min(1.0, normalized_reward + rubric_reward)
+                )
 
-        obs = self.state()
-        info = {
-            "total": round(self.total_reward, 2),
-            "classifier_stats": self.classifier.stats,
-        }
-
-        if done:
-            gs = self.grader()
-            info["grader_score"] = max(0.0, min(1.0, gs))
-
-        return obs, normalized_reward, done, info
+        return self._create_observation(reward=normalized_reward, done=done)
 
     def grader(self) -> float:
         """
@@ -369,10 +366,11 @@ class EmailEnv:
 
     def state(self) -> Dict:
         """Return the current environment state as an observation dict."""
-        if not hasattr(self, 'episode_id') or getattr(self, 'episode_id') is None:
+        if not hasattr(self, "episode_id") or getattr(self, "episode_id") is None:
             import uuid
+
             self.episode_id = str(uuid.uuid4())
-            
+
         return {
             "inbox": self.inbox,
             "steps": self.steps,

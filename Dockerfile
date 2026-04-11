@@ -12,22 +12,21 @@ COPY frontend/ ./
 RUN npm run build
 
 # --- Backend Stage ---
-FROM python:3.10
+FROM ghcr.io/meta-pytorch/openenv-base:latest
 WORKDIR /app
 
-# Install system dependencies
-RUN apt-get update && apt-get install -y \
-    build-essential \
-    && rm -rf /var/lib/apt/lists/*
+# Ensure uv is available
+# (openenv-base usually has it, but if not we can install it, but assuming it's available)
 
-# Upgrade pip
+# Upgrade pip (fallback/standard) and install dependencies using uv for extreme speed
 RUN pip install --no-cache-dir --upgrade pip
+RUN pip install uv
 
 # Copy everything
 COPY . /app/
 
-# Install the project and dependencies in one go
-RUN pip install --no-cache-dir .
+# Install the project and dependencies in one go using uv into the system python
+RUN uv pip install --system --no-cache .
 
 # Copy built frontend
 COPY --from=frontend-builder /frontend/dist /app/frontend/dist
@@ -42,9 +41,9 @@ EXPOSE 7860
 # Ensure modules are findable
 ENV PYTHONPATH=/app
 
-# Health check
+# Health check per documentation checklist
 HEALTHCHECK --interval=30s --timeout=10s --retries=3 \
-  CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:7860/state')" || exit 1
+  CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:7860/health')" || exit 1
 
 # Run the server
 CMD ["uvicorn", "server.app:app", "--host", "0.0.0.0", "--port", "7860"]

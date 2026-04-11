@@ -288,10 +288,11 @@ def main():
                 obs = result.get("observation", result)
                 reward = clamp_score(result.get("reward", 0.0))
                 done = result.get("done", False)
+                error_msg = obs.get("error_trace", None)
 
-                action_str = f"{action['action_type']}_{action['email_id']}"
+                action_str = f"{action.get('action_type', 'none')}_{action.get('email_id', 'none')}"
                 log_step(
-                    step=step, action=action_str, reward=reward, done=done, error=None
+                    step=step, action=action_str, reward=reward, done=done, error=error_msg
                 )
 
                 rewards.append(reward)

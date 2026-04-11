@@ -107,7 +107,7 @@ The reward function provides **incremental feedback throughout the trajectory**,
 | 🕐 Wait Penalty | `-0.1 × wait` | Per-step delay penalty (capped at -2.0) |
 | 🔄 Step Cost | `-0.05` | Small cost per step (prevents infinite loops) |
 
-**Design rationale**: Confidence-weighted rewards incentivize the agent to leverage ML signals. The step cost prevents degenerate policies.
+**Design rationale**: Confidence-weighted rewards incentivize the agent to leverage ML signals. The step cost prevents degenerate policies. **Partial progress signals** provide continuous feedback during the investigative loop, rewarding correct email processing and efficiency.
 
 ---
 
@@ -176,7 +176,7 @@ cd my-openenv
 pip install -r requirements.txt
 
 # 3. Start the RL Environment (FastAPI server)
-python -m uvicorn src.app:app --host 0.0.0.0 --port 8000
+python -m uvicorn server.app:app --host 0.0.0.0 --port 7860
 
 # 4. Run Inference Benchmark
 HF_TOKEN=hf_your_token python inference.py
@@ -189,7 +189,7 @@ HF_TOKEN=hf_your_token python inference.py
 docker build -t inboxiq .
 
 # Run the container
-docker run -p 8000:8000 inboxiq
+docker run -p 7860:7860 inboxiq
 ```
 
 ### Frontend (Optional)
@@ -215,8 +215,8 @@ InboxIQ fully implements the OpenEnv specification:
 
 ### Typed Models (Pydantic)
 - `Action`: Typed action model with `action_type` and `email_id`
-- `Observation`: Typed observation with inbox state
-- `StepResult`: Typed step response with observation, reward, done, info
+- `Observation`: Typed observation with inbox state, reward, done, info
+- `State`: Environment state with episode_id and step_count
 - `GraderResult`: Typed grader score with constraints
 
 ### Inference Logging Format
@@ -252,18 +252,20 @@ With **LLM agent** (Qwen2.5-72B via HuggingFace Router):
 
 ```
 InboxIQ/
-├── src/
+├── server/
 │   ├── __init__.py          # Package init
 │   ├── app.py               # FastAPI server (OpenEnv endpoints)
 │   ├── environment.py       # RL environment (reset, step, state, grader)
-│   ├── models.py            # Pydantic models (Action, Observation, Reward)
-│   └── classifier.py        # ML pipeline (TF-IDF + NB + sentiment + urgency)
+│   ├── models.py            # Pydantic models (Action, Observation, State)
+│   ├── classifier.py        # ML pipeline (TF-IDF + NB + sentiment + urgency)
+│   └── imap_client.py       # IMAP client for live email fetching
 ├── frontend/                # React dashboard (Vite + Lucide)
 ├── dataset/                 # SpamAssassin training data
 ├── inference.py             # Baseline inference script (OpenAI client)
 ├── openenv.yaml             # OpenEnv metadata specification
 ├── Dockerfile               # Multi-stage Docker build
-├── requirements.txt         # Python dependencies
+├── pyproject.toml           # Python dependencies and build config
+├── uv.lock                  # Dependency lock file
 ├── InboxIQ.png              # Project logo
 └── README.md                # This file
 ```
