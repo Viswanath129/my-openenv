@@ -8,6 +8,8 @@ FROM node:20-alpine AS frontend-builder
 WORKDIR /frontend
 COPY frontend/package*.json ./
 RUN npm install
+# Cache buster: change this value to force frontend rebuild
+ARG FRONTEND_CACHE_BUST=v5
 COPY frontend/ ./
 RUN npm run build
 

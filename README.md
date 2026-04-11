@@ -118,6 +118,19 @@ The reward function provides **incremental feedback throughout the trajectory**,
 
 **Design rationale**: Confidence-weighted rewards incentivize the agent to leverage ML signals. The wait-decay multiplier discourages procrastination without introducing negative numbers. **Partial progress signals** provide continuous feedback during the investigative loop.
 
+### 📊 Grading (0.0–1.0)
+The grader normalizes the total episode reward to a score between 0.0 and 1.0 using task-specific theoretical maximums:
+
+| Task | Difficulty | Max Total Reward | Grader Formula |
+|:-----|:-----------|:-----------------|:---------------|
+| **task1** | Easy | 1.5 | `score = total_reward / 1.5` |
+| **task2** | Medium | 4.0 | `score = total_reward / 4.0` |
+| **task3** | Hard | 8.0 | `score = total_reward / 8.0` |
+
+This provides a **simple, deterministic score** that encourages agents to maximize reward while providing smooth gradients for learning.
+
+---
+
 ---
 
 ## 📋 Tasks (Benchmarks)
@@ -196,7 +209,17 @@ pip install -r requirements.txt
 python -m uvicorn server.app:app --host 0.0.0.0 --port 7860
 
 # 4. Run Inference Benchmark
-HF_TOKEN=hf_your_token python inference.py
+HF_TOKEN=your_huggingface_token python inference.py
+```
+
+### Docker
+
+```bash
+# Build the container
+docker build -t inboxiq .
+
+# Run the container
+docker run -p 7860:7860 inboxiq
 ```
 
 ### Docker
