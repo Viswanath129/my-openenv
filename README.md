@@ -103,18 +103,20 @@ The reward function provides **incremental feedback throughout the trajectory**,
 
 | Outcome | Reward | Condition |
 |:--------|:-------|:----------|
-| ✅ Blocked Spam | `+0.6 – 0.9` | Delete a spam email (confidence weighted) |
-| ✅ Escalated Urgent | `+0.7` | Escalate aggressive/high-urgency |
-| ✅ Processed Work | `+0.5 – 0.8` | Open legitimate email (confidence weighted) |
-| ⚠️ Deferred Urgent | `+0.2` | Defer a HIGH urgency email (penalty applies) |
+| ✅ Blocked Spam | `0.6 – 0.8` | Delete a spam email (confidence weighted) |
+| ✅ Escalated Urgent | `0.7 – 0.9` | Escalate aggressive/high-urgency email |
+| ✅ Processed Work | `0.5 – 0.7` | Open legitimate email (confidence weighted) |
+| ⚠️ Deferred / No Target | `0.05 – 0.1` | Defer or act on missing email |
 | ❌ Deleted Real Email | `0.0` | Critical error — deleting legitimate mail |
-| ❌ Allowed Spam | `0.1 – 0.3` | Failing to delete spam |
-| 🕐 Wait Penalty | `-0.05` | Per-step delay penalty |
-| 🏆 Completion Bonus | `+0.5` | Episode successfully cleared |
+| ❌ Failed Spam Detection | `0.05` | Not deleting identified spam |
+| 🕐 Wait Decay | `reward × 0.85^wait` | Correct actions lose value when delayed |
+| 🏆 Completion Bonus | `+0.1` | Added to final step if inbox is cleared |
 
-**Reward Normalization**: All per-step rewards and cumulative scores are strictly constrained to the **0.0 – 1.0 range** to prevent gradient explosion in RL algorithms. **Partial progress signals** are provided via `step_feedback` telemetry.
+> **Every single step reward is strictly constrained to `[0.0, 1.0]`.**
+> There are **no negative rewards** in InboxIQ. Total Failure = `0.0`, Perfect Success = `1.0`.
+> This is enforced by a hard clamp: `max(0.0, min(1.0, reward))` on every code path.
 
-**Design rationale**: Confidence-weighted rewards incentivize the agent to leverage ML signals. The step cost prevents degenerate policies. **Partial progress signals** provide continuous feedback during the investigative loop, rewarding correct email processing and efficiency.
+**Design rationale**: Confidence-weighted rewards incentivize the agent to leverage ML signals. The wait-decay multiplier discourages procrastination without introducing negative numbers. **Partial progress signals** provide continuous feedback during the investigative loop.
 
 ---
 

@@ -38,7 +38,7 @@ export default function App() {
   const [lastReward, setLastReward] = useState(null);
   const [isAuto, setIsAuto] = useState(false);
   const [isRunning, setIsRunning] = useState(false);
-  const [simSpeed, setSimSpeed] = useState(5000);
+  const [simSpeed, setSimSpeed] = useState(8000);
   const [logs, setLogs] = useState([]);
   const [showAddAccount, setShowAddAccount] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
@@ -207,7 +207,7 @@ export default function App() {
         else if (target.waitingTime > 25) action = 'OPEN';
         else action = 'DEFER';
         handleAction(target.id, action);
-      }, 4500); // Slowed down from 1.5s to 4.5s so users can actually read the live stream before the agent triages it!
+      }, 6000); // Slowed to 6s for readable demo experience
     } else clearInterval(autoAgentRef.current);
     return () => clearInterval(autoAgentRef.current);
   }, [isAuto, isRunning, handleAction]);

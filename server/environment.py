@@ -245,14 +245,14 @@ class EmailEnv:
         email_id = action.email_id
 
         target_email = next((e for e in self.inbox if e["id"] == email_id), None)
-        step_reward = -0.1  # Small cost per step (penalizes infinite loops)
+        step_reward = 0.05  # Minimal baseline reward for participating (0.0–1.0 compliant)
 
         # Track observation telemetry for this step
         step_error_trace = None
         current_step_feedback = None
 
         if target_email:
-            step_reward += self.complex_grader(target_email, action_type)
+            step_reward = self.complex_grader(target_email, action_type)
             if action_type in ["open", "delete", "escalate"]:
                 self.inbox = [e for e in self.inbox if e["id"] != email_id]
                 # Track correct processing
@@ -266,8 +266,9 @@ class EmailEnv:
             # Graceful System Degradation: intercept hallucinated IDs mathematically
             if email_id and email_id.lower() != "none":
                 step_error_trace = f"InvalidTargetError: Action '{action_type}' failed. Identifier '{email_id}' does not exist in inbox."
-                step_reward -= 0.5  # minor negative penalty for hallucination
+                step_reward = 0.05  # Near-zero reward for hallucinated target
             else:
+                step_reward = 0.1  # Small reward for choosing to defer
                 current_step_feedback = "Deferred action; no target specified."
 
         # Add progress-based rewards for investigative loop
@@ -286,8 +287,9 @@ class EmailEnv:
                 self._get_random_email(is_train=(self.current_task != "eval"))
             )
 
-        # Rewards are now natively [0.0, 1.0] per complex_grader
-        normalized_reward = step_reward
+        # ── HARD CLAMP: Guarantee 0.0–1.0 output ──
+        # This is the absolute last line of defense.
+        normalized_reward = float(max(0.0, min(1.0, step_reward)))
 
         self.total_reward += normalized_reward
         self._episode_rewards.append(normalized_reward)
