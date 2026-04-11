@@ -8,23 +8,24 @@ Usage:
 """
 
 import os
+import sys
 import json
 from typing import List, Optional
 
 from openai import OpenAI
 
 # ── Required environment variables (injected by hackathon evaluator) ──
-API_BASE_URL = os.environ["API_BASE_URL"]
+API_BASE_URL = os.environ.get("API_BASE_URL", "https://router.huggingface.co/v1")
 API_KEY = os.environ.get("API_KEY") or os.environ.get("HF_TOKEN", "")
 MODEL_NAME = os.environ.get("MODEL_NAME", "Qwen/Qwen2.5-72B-Instruct")
 
 if API_KEY:
-    print("[INFO] API credentials found.", flush=True)
+    print("[INFO] API credentials found.", file=sys.stderr, flush=True)
 else:
-    print("[WARNING] No API credentials found.", flush=True)
+    print("[WARNING] No API credentials found.", file=sys.stderr, flush=True)
 
 # ── Environment config ──
-ENV_URL = os.environ.get("ENV_URL", "http://localhost:8000")
+ENV_URL = os.environ.get("ENV_URL", "http://localhost:7860")
 BENCHMARK = "InboxIQ"
 
 TASKS = [
@@ -131,10 +132,10 @@ Choose the single best action right now."""
             json_str = content[content.index("{") : content.rindex("}") + 1]
             return json.loads(json_str)
         else:
-            print(f"[DEBUG] LLM failed to return JSON. Output: {content}", flush=True)
+            print(f"[DEBUG] LLM failed to return JSON. Output: {content}", file=sys.stderr, flush=True)
     except Exception as exc:
         import traceback
-        print(f"[DEBUG] API/Proxy Error! LLM request failed: {exc}", flush=True)
+        print(f"[DEBUG] API/Proxy Error! LLM request failed: {exc}", file=sys.stderr, flush=True)
         traceback.print_exc()
 
     return fallback_policy(inbox)
@@ -204,24 +205,24 @@ def http_get(url: str) -> dict:
 # ══════════════════════════════════════
 
 def main():
-    print("=" * 60, flush=True)
-    print("  InboxIQ — OpenEnv Inference Benchmark", flush=True)
-    print("=" * 60, flush=True)
+    print("=" * 60, file=sys.stderr, flush=True)
+    print("  InboxIQ — OpenEnv Inference Benchmark", file=sys.stderr, flush=True)
+    print("=" * 60, file=sys.stderr, flush=True)
 
     # ── Initialize OpenAI client using injected proxy credentials ──
     client = OpenAI(
         base_url=API_BASE_URL,
         api_key=API_KEY,
     )
-    print(f"[INFO] OpenAI client configured: base_url={API_BASE_URL}", flush=True)
-    print(f"[INFO] Model: {MODEL_NAME}", flush=True)
+    print(f"[INFO] OpenAI client configured: base_url={API_BASE_URL}", file=sys.stderr, flush=True)
+    print(f"[INFO] Model: {MODEL_NAME}", file=sys.stderr, flush=True)
 
     # ──────────────────────────────────────────────────────────────
     # MANDATORY warm-up call: guarantees at least one real LLM
     # request flows through the proxy, satisfying the validator.
     # This runs BEFORE any env interaction so it cannot be skipped.
     # ──────────────────────────────────────────────────────────────
-    print("[INFO] Making mandatory warm-up LLM call through proxy...", flush=True)
+    print("[INFO] Making mandatory warm-up LLM call through proxy...", file=sys.stderr, flush=True)
     try:
         warmup = client.chat.completions.create(
             model=MODEL_NAME,
@@ -230,9 +231,9 @@ def main():
             temperature=0.0,
         )
         warmup_reply = warmup.choices[0].message.content.strip()
-        print(f"[INFO] Warm-up LLM call succeeded: {warmup_reply}", flush=True)
+        print(f"[INFO] Warm-up LLM call succeeded: {warmup_reply}", file=sys.stderr, flush=True)
     except Exception as e:
-        print(f"[WARNING] Warm-up LLM call failed: {e}", flush=True)
+        print(f"[WARNING] Warm-up LLM call failed: {e}", file=sys.stderr, flush=True)
         # Continue anyway — the attempt itself should register with the proxy.
 
     # ── Run tasks ──
@@ -278,12 +279,12 @@ def main():
 
         except Exception as e:
             # ── Environment unavailable — emit honest error logs ──
-            print(f"[DEBUG] Env error for {task_id}: {e}. Environment unreachable.", flush=True)
+            print(f"[DEBUG] Env error for {task_id}: {e}. Environment unreachable.", file=sys.stderr, flush=True)
             
             # Emit honest failure instead of fake rewards
             log_step(step=1, action="none", reward=0.0, done=True, error="env_unavailable")
             log_end(success=False, steps=0, score=0.0, rewards=[])
-            print("-" * 50, flush=True)
+            print("-" * 50, file=sys.stderr, flush=True)
             continue  # Skip to next task
 
         # Compute per-task score: use grader if env was available, otherwise grade_task
@@ -295,9 +296,9 @@ def main():
             pass  # Already set above
 
         log_end(success=success, steps=steps_taken, score=task_score, rewards=rewards)
-        print("-" * 50, flush=True)
+        print("-" * 50, file=sys.stderr, flush=True)
 
-    print("\n✅ InboxIQ inference benchmark complete.", flush=True)
+    print("\n✅ InboxIQ inference benchmark complete.", file=sys.stderr, flush=True)
 
 
 if __name__ == "__main__":

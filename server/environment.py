@@ -146,6 +146,8 @@ class EmailEnv:
         self.steps = 0
         self.current_task = task
         self._episode_rewards = []
+        import uuid
+        self.episode_id = str(uuid.uuid4())
 
         cfg = self.TASK_CONFIG.get(task, self.TASK_CONFIG["train"])
         self.max_steps = cfg["max_steps"]
@@ -227,20 +229,19 @@ class EmailEnv:
                 self._get_random_email(is_train=(self.current_task != "eval"))
             )
 
+        # ── Completion Bonus ──
+        if done and len(self.inbox) == 0:
+            bonus = 10.0
+            step_reward += bonus
+            
         # Normalize reward to [0.0, 1.0] range per OpenEnv specification
-        # Max possible per-step reward is around 10.0 (spam delete + bonuses)
-        normalized_reward = max(0.0, min(1.0, (step_reward + 10.0) / 20.0))
+        # Max possible per-step reward is around 20.0 (spam delete + bonuses + completion)
+        normalized_reward = max(0.0, min(1.0, (step_reward + 10.0) / 30.0))
         
         self.total_reward += step_reward
         self._episode_rewards.append(normalized_reward)
         self.steps += 1
         done = self.steps >= self.max_steps or (len(self.inbox) == 0 and self.steps > 1)
-
-        # ── Completion Bonus ──
-        if done and len(self.inbox) == 0:
-            bonus = 10.0
-            step_reward += bonus
-            self.total_reward += bonus
 
         info = {
             "total": round(self.total_reward, 2),
@@ -249,7 +250,7 @@ class EmailEnv:
 
         if done:
             gs = self.grader()
-            info["grader_score"] = max(0.01, min(0.99, gs))
+            info["grader_score"] = max(0.0, min(1.0, gs))
 
         return self.state(), normalized_reward, done, info
 
@@ -274,9 +275,15 @@ class EmailEnv:
 
     def state(self) -> Dict:
         """Return the current environment state as an observation dict."""
+        if not hasattr(self, 'episode_id') or getattr(self, 'episode_id') is None:
+            import uuid
+            self.episode_id = str(uuid.uuid4())
+            
         return {
             "inbox": self.inbox,
             "steps": self.steps,
+            "step_count": self.steps,
+            "episode_id": self.episode_id,
             "task": self.current_task,
             "max_steps": self.max_steps,
             "total_reward": round(self.total_reward, 2),
