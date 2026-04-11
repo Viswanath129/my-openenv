@@ -1,30 +1,31 @@
 from typing import List, Dict, Any, Optional
 from pydantic import BaseModel, Field
 
+
 def calculate_success(trajectory: List[Dict[str, Any]]) -> float:
     if not trajectory:
         return 0.0
-        
+
     last_step = trajectory[-1]
     observation = last_step.get("observation", {})
     if not isinstance(observation, dict):
-        observation = observation.dict() if hasattr(observation, "dict") else getattr(observation, "__dict__", {})
-        
+        observation = (
+            observation.dict()
+            if hasattr(observation, "dict")
+            else getattr(observation, "__dict__", {})
+        )
+
     total_reward = observation.get("total_reward", 0.0)
     task_id = observation.get("task", "task1")
-    
-    # Normalizing bounds mapping to avoid gradient explosion issue
-    task_benchmarks = {
-        "task1": 1.35,  
-        "task2": 3.05,  
-        "task3": 7.00,  
-    }
-    
-    r_max = task_benchmarks.get(task_id, 1.0)
+
+    task_cfg = TASK_REGISTRY.get(task_id)
+    r_max = float(max(1, task_cfg.config.get("count", 1))) if task_cfg else 1.0
     if r_max <= 0.0:
         return 0.0
-        
-    return float(total_reward / r_max)
+
+    score = float(total_reward / r_max)
+    return min(max(score, 0.0), 1.0)
+
 
 class Task(BaseModel):
     task_id: str
@@ -40,6 +41,7 @@ class Task(BaseModel):
         score = calculate_success(trajectory)
         return min(max(score, 0.0), 1.0)
 
+
 TASK_REGISTRY = {
     "task1": Task(
         task_id="task1",
@@ -48,7 +50,7 @@ TASK_REGISTRY = {
         difficulty="easy",
         prompt="Your inbox contains one email. Analyze its sentiment, urgency, and spam score. Execute the most appropriate action (open, delete, or escalate) to maximize reward.",
         max_steps=5,
-        config={"count": 1}
+        config={"count": 1},
     ),
     "task2": Task(
         task_id="task2",
@@ -57,7 +59,7 @@ TASK_REGISTRY = {
         difficulty="medium",
         prompt="You have a backlog of 3 emails. Some are spam, some are urgent work requests. Process all of them efficiently. Remember: deleting a legitimate email is heavily penalized.",
         max_steps=10,
-        config={"count": 3}
+        config={"count": 3},
     ),
     "task3": Task(
         task_id="task3",
@@ -66,6 +68,6 @@ TASK_REGISTRY = {
         difficulty="hard",
         prompt="Total Chaos! 5 emails are pending, and more may arrive. Prioritize 'Aggressive' sentiment for escalation and 'HIGH' urgency for immediate opening. Efficiency and accuracy are critical.",
         max_steps=20,
-        config={"count": 5}
-    )
+        config={"count": 5},
+    ),
 }

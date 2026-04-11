@@ -70,7 +70,7 @@ class EmailEnv:
         self.total_reward: float = 0.0
         self.steps: int = 0
         self.max_steps: int = 10
-        self.current_task: str = "train"
+        self.current_task: str = "task1"
         self.dataset_path = dataset_path or _DEFAULT_DATASET
         self.raw_data: List[Dict] = []
         self._episode_rewards: List[float] = []
@@ -158,23 +158,24 @@ class EmailEnv:
         """Reset the environment for a new episode. Returns the initial observation."""
         self.total_reward = 0.0
         self.steps = 0
-        self.current_task = task or kwargs.get("task", "train")
+        self.current_task = task or kwargs.get("task", "task1")
         self._episode_rewards = []
 
         if seed is not None:
             random.seed(seed)
+        self.seed = seed
 
         import uuid
 
         self.episode_id = episode_id or str(uuid.uuid4())
 
-        task_info = TASK_REGISTRY.get(task, TASK_REGISTRY.get("task1"))
+        task_key = self.current_task if self.current_task in TASK_REGISTRY else "task1"
+        self.current_task = task_key
+        task_info = TASK_REGISTRY[task_key]
         self.max_steps = task_info.max_steps
         count = task_info.config.get("count", 1)
         self.inbox = [
-            self._get_random_email(
-                is_train=(task in ["train", "task1", "task2", "task3"])
-            )
+            self._get_random_email(is_train=(task_key in ["task1", "task2", "task3"]))
             for _ in range(count)
         ]
         self.initial_email_count = len(self.inbox)
@@ -211,31 +212,31 @@ class EmailEnv:
         urgency = email.get("urgency", "MEDIUM")
         sentiment = email.get("sentiment", "Professional")
 
-        #  Action-specific reward mapping
+        # Action-specific reward mapping with reachable per-email optimum of 1.0
         if action_type == "delete":
             if is_spam:
-                reward = 0.4 + (0.4 * confidence)  # 0.40.8
+                reward = 0.85 + (0.15 * confidence)
             else:
                 reward = 0.0  # CRITICAL: Deleting real mail = total failure
         elif action_type == "open":
             if not is_spam:
-                reward = 0.35 + (0.35 * confidence)  # 0.350.70
+                reward = 0.8 + (0.2 * confidence)
             else:
                 reward = 0.05  # Opening spam = near-failure
         elif action_type == "escalate":
-            if urgency == "HIGH" or sentiment == "Aggressive":
-                reward = 0.7 + (0.2 * confidence)  # 0.70.9
+            if (urgency == "HIGH" or sentiment == "Aggressive") and not is_spam:
+                reward = 0.85 + (0.15 * confidence)
             elif not is_spam:
-                reward = 0.3  # Unnecessary escalation
+                reward = 0.55  # Unnecessary escalation on legitimate mail
             else:
                 reward = 0.05  # Escalating spam
         elif action_type == "defer":
             if urgency == "HIGH":
                 reward = 0.1  # Deferring urgent = bad
             else:
-                reward = 0.2  # Low-urgency defer = acceptable
+                reward = 0.35  # Low-urgency defer = acceptable
         else:
-            reward = 0.05  # Unknown action
+            reward = 0.0  # Unknown action
 
         #  Wait Decay (multiplier, never goes negative)
         wait_steps = email.get("wait", 0)
@@ -255,7 +256,7 @@ class EmailEnv:
         email_id = action.email_id
 
         target_email = next((e for e in self.inbox if e["id"] == email_id), None)
-        step_reward = 0.05  # Minimal baseline reward for participating
+        step_reward = 0.0
 
         # Track observation telemetry for this step
         step_error_trace = None
@@ -282,15 +283,6 @@ class EmailEnv:
                 step_reward = 0.1  # Small reward for choosing to defer
                 current_step_feedback = "Deferred action; no target specified."
 
-        # Add progress-based bonus BEFORE final clamp to ensure [0.0, 1.0] constraint
-        # Progress bonus scales from 0.0 (no progress) to 0.15 (complete)
-        # NOTE: Dynamic emails may cause processed_emails > initial_email_count,
-        # so we cap progress_ratio at 1.0 to prevent bonus exceeding 0.15
-        if self.initial_email_count > 0:
-            progress_ratio = min(1.0, self.processed_emails / self.initial_email_count)
-            progress_bonus = progress_ratio * 0.15  # Max 0.15 additional reward
-            step_reward = step_reward * (1.0 - progress_bonus * 0.3) + progress_bonus
-
         # CRITICAL: Final clamp to [0.0, 1.0] - NO INTERMEDIATE VALUES CAN EXCEED 1.0
         step_reward = float(max(0.0, min(1.0, step_reward)))
 
@@ -298,8 +290,8 @@ class EmailEnv:
         for email in self.inbox:
             email["wait"] += 1
 
-        # Dynamic email arrivals (task3 pressure)
-        if random.random() < 0.3 and len(self.inbox) < 8:
+        # Dynamic arrivals are restricted to task3 to keep task1/task2 deterministic.
+        if self.current_task == "task3" and random.random() < 0.3 and len(self.inbox) < 8:
             self.inbox.append(
                 self._get_random_email(is_train=(self.current_task != "eval"))
             )
@@ -307,7 +299,7 @@ class EmailEnv:
         self.total_reward += step_reward
         self._episode_rewards.append(step_reward)
         self.steps += 1
-        done = self.steps >= self.max_steps or (len(self.inbox) == 0 and self.steps > 1)
+        done = self.steps >= self.max_steps or len(self.inbox) == 0
 
         # NOTE: Completion bonus is now handled in grader() via trajectory analysis
         # to maintain proper normalization of individual step rewards [0.0, 1.0]
@@ -338,13 +330,10 @@ class EmailEnv:
         Maps total_reward to a [0.0, 1.0] score using per-task
         theoretical maxima. Negative totals are treated as failure (0.0).
         """
-        task_benchmarks = {
-            "task1": 1.35,  # 1 email + completion bonus - minimal step cost
-            "task2": 3.05,  # 3 emails + completion bonus - minimal step cost
-            "task3": 7.00,  # dynamic arrivals approx.
-        }
-
-        r_max = task_benchmarks.get(self.current_task, 1.0)
+        task_cfg = TASK_REGISTRY.get(self.current_task, TASK_REGISTRY["task1"])
+        initial_count = task_cfg.config.get("count", 1)
+        # Per-step rewards are clamped to [0, 1], so each initial email can max at 1.0.
+        r_max = float(max(1, initial_count))
         if r_max <= 0.0:
             return 0.0
 
@@ -378,14 +367,14 @@ class EmailEnv:
 
         if done:
             gs = self.grader()
-            info["grader_score"] = max(0.01, min(0.99, gs))
+            info["grader_score"] = round(gs, 4)
 
         return Observation(
             inbox=self.inbox,
             steps=self.steps,
             task=self.current_task,
             max_steps=self.max_steps,
-            total_reward=round(self.grader(), 2),
+            total_reward=round(self.total_reward, 4),
             classifier_stats=self.classifier.stats,
             reward=reward,
             done=done,

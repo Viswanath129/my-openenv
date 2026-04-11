@@ -11,7 +11,7 @@ Endpoints:
   GET  /classifier-stats → Classifier performance metrics
 """
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Body
 from fastapi.responses import RedirectResponse, FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -30,14 +30,16 @@ def _clamp_score(v: float) -> float:
 
 try:
     from server.environment import EmailEnv
-    from server.models import Action, StepResult, Observation
+    from server.models import Action, StepResult, Observation, State
     from server.classifier import EmailClassifier
     from server.imap_client import validate_credentials, fetch_live_emails
+    from server.registry import TASK_REGISTRY
 except ImportError:
     from .environment import EmailEnv
-    from .models import Action, StepResult, Observation
+    from .models import Action, StepResult, Observation, State
     from .classifier import EmailClassifier
     from .imap_client import validate_credentials, fetch_live_emails
+    from .registry import TASK_REGISTRY
 
 # Load env vars early
 load_dotenv()
@@ -59,6 +61,7 @@ app.add_middleware(
 # ── RL Environment ──
 env = EmailEnv()
 
+
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request, exc):
     """
@@ -66,31 +69,32 @@ async def validation_exception_handler(request, exc):
     If the agent submits a malformed Action, a 0.0 reward step is recorded.
     """
     error_msg = f"Action Schema Error: {str(exc)}"
-    
+
     # Register a faulty step with 0.0 reward (failure baseline)
     env.steps += 1
     env.total_reward += 0.0
     env._episode_rewards.append(0.0)
-    
+
     # Wrap in the mandatory StepResult format
     response_payload = {
         "observation": {
-            "inbox": [e for e in env.inbox] if hasattr(env, 'inbox') else [],
+            "inbox": [e for e in env.inbox] if hasattr(env, "inbox") else [],
             "steps": env.steps,
-            "task": getattr(env, 'current_task', 'train'),
-            "max_steps": getattr(env, 'max_steps', 10),
+            "task": getattr(env, "current_task", "train"),
+            "max_steps": getattr(env, "max_steps", 10),
             "total_reward": round(env.total_reward, 2),
             "reward": 0.0,
             "done": env.steps >= env.max_steps,
             "error_trace": error_msg,
-            "step_feedback": "Invalid action parameters provided. Learn the schema."
+            "step_feedback": "Invalid action parameters provided. Learn the schema.",
         },
         "reward": 0.0,
         "done": env.steps >= env.max_steps,
-        "info": {}
+        "info": {},
     }
-    
+
     return JSONResponse(status_code=200, content=response_payload)
+
 
 # ── Standalone classifier for classification endpoint ──
 _dataset_path = None
@@ -175,9 +179,11 @@ else:
 
 
 @app.post("/reset", response_model=Observation)
-def reset(task: str = "train"):
+def reset(
+    task: str = "task1", seed: Optional[int] = None, episode_id: Optional[str] = None
+):
     """Reset the environment and return the initial observation."""
-    return env.reset(task=task)
+    return env.reset(task=task, seed=seed, episode_id=episode_id)
 
 
 @app.post("/step")
@@ -185,10 +191,10 @@ def step(action: Action):
     """Execute one action and return (observation, reward, done, info)."""
     obs = env.step(action)
     return {
-        "observation": obs.model_dump() if hasattr(obs, 'model_dump') else obs,
-        "reward": _clamp_score(obs.reward if hasattr(obs, 'reward') else 0.0),
-        "done": obs.done if hasattr(obs, 'done') else False,
-        "info": obs.info if hasattr(obs, 'info') else {}
+        "observation": obs.model_dump() if hasattr(obs, "model_dump") else obs,
+        "reward": _clamp_score(obs.reward if hasattr(obs, "reward") else 0.0),
+        "done": obs.done if hasattr(obs, "done") else False,
+        "info": obs.info if hasattr(obs, "info") else {},
     }
 
 
@@ -196,6 +202,50 @@ def step(action: Action):
 def state():
     """Return the current environment state."""
     return env.state()
+
+
+@app.get("/tasks", response_model=list[Task])
+def tasks():
+    """Get metadata for all available tasks."""
+    return list(TASK_REGISTRY.values())
+
+
+@app.get("/schema")
+def schema():
+    """Return action/observation/state JSON schemas."""
+    return {
+        "action": Action.model_json_schema(),
+        "observation": Observation.model_json_schema(),
+        "state": State.model_json_schema(),
+    }
+
+
+@app.post("/mcp")
+def mcp(payload: Dict = Body(default_factory=dict)):
+    """
+    Lightweight MCP compatibility endpoint.
+    This keeps runtime validators and MCP-aware clients from hard failing.
+    """
+    req_id = payload.get("id")
+    method = payload.get("method")
+    if method == "initialize":
+        return {
+            "jsonrpc": "2.0",
+            "id": req_id,
+            "result": {
+                "protocolVersion": "2024-11-05",
+                "capabilities": {"tools": {}},
+                "serverInfo": {"name": "InboxIQ", "version": "3.0"},
+            },
+        }
+    if method == "tools/list":
+        return {"jsonrpc": "2.0", "id": req_id, "result": {"tools": []}}
+
+    return {
+        "jsonrpc": "2.0",
+        "id": req_id,
+        "error": {"code": -32601, "message": "Method not found"},
+    }
 
 
 @app.get("/health")
