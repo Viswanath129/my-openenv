@@ -284,8 +284,10 @@ class EmailEnv:
 
         # Add progress-based bonus BEFORE final clamp to ensure [0.0, 1.0] constraint
         # Progress bonus scales from 0.0 (no progress) to 0.15 (complete)
+        # NOTE: Dynamic emails may cause processed_emails > initial_email_count,
+        # so we cap progress_ratio at 1.0 to prevent bonus exceeding 0.15
         if self.initial_email_count > 0:
-            progress_ratio = self.processed_emails / self.initial_email_count
+            progress_ratio = min(1.0, self.processed_emails / self.initial_email_count)
             progress_bonus = progress_ratio * 0.15  # Max 0.15 additional reward
             step_reward = step_reward * (1.0 - progress_bonus * 0.3) + progress_bonus
 
