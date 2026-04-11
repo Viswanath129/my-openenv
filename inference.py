@@ -15,14 +15,13 @@ from openai import OpenAI
 
 # ── Required environment variables (injected by hackathon evaluator) ──
 API_BASE_URL = os.environ["API_BASE_URL"]
-API_KEY = os.environ["API_KEY"]
+API_KEY = os.environ.get("API_KEY") or os.environ.get("HF_TOKEN", "")
 MODEL_NAME = os.environ.get("MODEL_NAME", "Qwen/Qwen2.5-72B-Instruct")
 
-HF_TOKEN = os.environ.get("HF_TOKEN")
-if HF_TOKEN:
-    print("[INFO] HF_TOKEN is valid and set.", flush=True)
+if API_KEY:
+    print("[INFO] API credentials found.", flush=True)
 else:
-    print("[WARNING] HF_TOKEN is not set.", flush=True)
+    print("[WARNING] No API credentials found.", flush=True)
 
 # ── Environment config ──
 ENV_URL = os.environ.get("ENV_URL", "http://localhost:8000")
@@ -44,8 +43,8 @@ def format_bool(x: bool) -> str:
 
 
 def clamp_score(v: float) -> float:
-    """Clamp a score to strict (0, 1) — never exactly 0.0 or 1.0."""
-    return max(0.01, min(0.99, v))
+    """Clamp a score to [0.0, 1.0] range."""
+    return max(0.0, min(1.0, v))
 
 
 def grade_task(correct: bool) -> float:
@@ -75,7 +74,7 @@ def log_end(success: bool, steps: int, score: float, rewards: List[float]):
     rewards_str = ",".join(f"{r:.2f}" for r in clamped_rewards)
     clamped_score = clamp_score(score)
     print(
-        f"[END] success={format_bool(success)} steps={steps} score={clamped_score:.4f} rewards={rewards_str}",
+        f"[END] success={format_bool(success)} steps={steps} score={clamped_score:.2f} rewards={rewards_str}",
         flush=True,
     )
 
@@ -278,34 +277,14 @@ def main():
             success = True
 
         except Exception as e:
-            # ── Environment unavailable — do a standalone LLM-driven demo ──
-            print(f"[DEBUG] Env error for {task_id}: {e}. Running standalone LLM demo.", flush=True)
-
-            try:
-                prompt = (
-                    f"You are an email triage agent. For task '{task_id}', "
-                    "decide: should you open, delete, defer, or escalate "
-                    "an email with subject 'Urgent: Server Down', urgency HIGH, "
-                    "sentiment Aggressive, spam_score 0.05? "
-                    "Reply with ONLY a JSON object: {{\"action_type\": \"...\", \"email_id\": \"email_1\"}}"
-                )
-                response = client.chat.completions.create(
-                    model=MODEL_NAME,
-                    messages=[{"role": "user", "content": prompt}],
-                    max_tokens=100,
-                    temperature=0.1,
-                )
-                action_text = response.choices[0].message.content.strip()
-                reward = 0.75
-                steps_taken = 1
-                rewards.append(reward)
-                log_step(step=1, action=action_text[:60], reward=reward, done=True, error=None)
-                success = True
-            except Exception as llm_err:
-                reward = 0.01
-                steps_taken = 1
-                rewards.append(reward)
-                log_step(step=1, action="error", reward=reward, done=True, error=str(llm_err))
+            # ── Environment unavailable — emit honest error logs ──
+            print(f"[DEBUG] Env error for {task_id}: {e}. Environment unreachable.", flush=True)
+            
+            # Emit honest failure instead of fake rewards
+            log_step(step=1, action="none", reward=0.0, done=True, error="env_unavailable")
+            log_end(success=False, steps=0, score=0.0, rewards=[])
+            print("-" * 50, flush=True)
+            continue  # Skip to next task
 
         # Compute per-task score: use grader if env was available, otherwise grade_task
         task_score = grade_task(success)
