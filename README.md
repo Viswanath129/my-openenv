@@ -98,14 +98,16 @@ The reward function provides **incremental feedback throughout the trajectory**,
 
 | Outcome | Reward | Condition |
 |:--------|:-------|:----------|
-| ✅ Blocked Spam | `+2.0 × confidence` | Delete a spam email |
-| ✅ Escalated Urgent | `+1.5` | Escalate aggressive/high-urgency |
-| ✅ Processed Work | `+1.0 × confidence` | Open legitimate email |
-| ⚠️ Deferred Urgent | `-1.0` | Defer a HIGH urgency email |
-| ❌ Deleted Real Email | `-3.0` | Critical error — deleting legitimate mail |
-| ❌ Allowed Spam | `-2.5 × confidence` | Failing to delete spam |
-| 🕐 Wait Penalty | `-0.1 × wait` | Per-step delay penalty (capped at -2.0) |
-| 🔄 Step Cost | `-0.05` | Small cost per step (prevents infinite loops) |
+| ✅ Blocked Spam | `+0.6 – 0.9` | Delete a spam email (confidence weighted) |
+| ✅ Escalated Urgent | `+0.7` | Escalate aggressive/high-urgency |
+| ✅ Processed Work | `+0.5 – 0.8` | Open legitimate email (confidence weighted) |
+| ⚠️ Deferred Urgent | `+0.2` | Defer a HIGH urgency email (penalty applies) |
+| ❌ Deleted Real Email | `0.0` | Critical error — deleting legitimate mail |
+| ❌ Allowed Spam | `0.1 – 0.3` | Failing to delete spam |
+| 🕐 Wait Penalty | `-0.05` | Per-step delay penalty |
+| 🏆 Completion Bonus | `+0.5` | Episode successfully cleared |
+
+**Reward Normalization**: All per-step rewards and cumulative scores are strictly constrained to the **0.0 – 1.0 range** to prevent gradient explosion in RL algorithms. **Partial progress signals** are provided via `step_feedback` telemetry.
 
 **Design rationale**: Confidence-weighted rewards incentivize the agent to leverage ML signals. The step cost prevents degenerate policies. **Partial progress signals** provide continuous feedback during the investigative loop, rewarding correct email processing and efficiency.
 
@@ -115,26 +117,34 @@ The reward function provides **incremental feedback throughout the trajectory**,
 
 InboxIQ includes **three tasks** spanning increasing difficulty:
 
-### Task 1: Single Email Triage (Easy)
-- **Objective**: Correctly classify and act on a single email
+### Task 1: Precise Triage (Easy)
+- **Objective**: Correctly classify and act on a single high-priority email.
 - **Initial inbox**: 1 email
 - **Max steps**: 5
-- **Focus**: Basic action selection — distinguish spam from legitimate mail
-- **Optimal reward**: ~3.0
+- **Focus**: Foundational action selection and state manipulation.
 
-### Task 2: Backlog Processing (Medium)
-- **Objective**: Process a backlog of 3 emails with mixed types
+### Task 2: Incentive Cleanup (Medium)
+- **Objective**: Clear a mixed backlog of 3 emails with varying priorities.
 - **Initial inbox**: 3 emails (spam, work, support mix)
 - **Max steps**: 10
-- **Focus**: Batch prioritization and decision-making under diversity
-- **Optimal reward**: ~8.0
+- **Focus**: Prioritization and sequential tool usage.
 
-### Task 3: Dynamic Inbox Stream (Hard)
-- **Objective**: Handle 5 initial emails with continuous random arrivals
-- **Initial inbox**: 5 emails + dynamic arrivals (30% chance per step)
+### Task 3: Chaos Management (Hard)
+- **Objective**: Handle 5 initial emails with continuous random arrivals and aggressive sentiment.
+- **Initial inbox**: 5 emails + dynamic arrivals.
 - **Max steps**: 20
-- **Focus**: Real-time triage under time pressure and evolving state
-- **Optimal reward**: ~15.0
+- **Focus**: Real-time triage under pressure and anomaly detection.
+
+### Task Registry & Grading
+
+InboxIQ utilizes a **Standardized Task Registry** (`server/registry.py`) providing a unified interface for evaluation:
+
+```python
+def grade_task(self, trajectory) -> float:
+    # Deterministic grading based on episode history
+    # Returns strictly between 0.0 and 1.0
+    return calculate_success(trajectory)
+```
 
 ### Grading
 
@@ -214,10 +224,10 @@ InboxIQ fully implements the OpenEnv specification:
 | `/grader` | GET | Returns normalized score `[0.0, 1.0]` |
 
 ### Typed Models (Pydantic)
-- `Action`: Typed action model with `action_type` and `email_id`
-- `Observation`: Typed observation with inbox state, reward, done, info
-- `State`: Environment state with episode_id and step_count
-- `GraderResult`: Typed grader score with constraints
+- `Action`: Typed with `action_type` and `email_id`.
+- `Observation`: Includes `inbox`, `reward`, `done`, `error_trace`, and `step_feedback`.
+- `State`: Mandatory persistence with `episode_id` and `step_count`.
+- `GraderResult`: Normalized score with strict constraints.
 
 ### Inference Logging Format
 ```
@@ -256,6 +266,7 @@ InboxIQ/
 │   ├── __init__.py          # Package init
 │   ├── app.py               # FastAPI server (OpenEnv endpoints)
 │   ├── environment.py       # RL environment (reset, step, state, grader)
+│   ├── registry.py          # Standardized Task Registry & Graders
 │   ├── models.py            # Pydantic models (Action, Observation, State)
 │   ├── classifier.py        # ML pipeline (TF-IDF + NB + sentiment + urgency)
 │   └── imap_client.py       # IMAP client for live email fetching
