@@ -136,43 +136,48 @@ export default function App() {
     } catch (e) {} finally { setIsSyncing(false); }
   }, [isSyncing]);
 
-  const handleAction = useCallback((id, actionType) => {
+  const handleAction = useCallback(async (id, actionType) => {
     const email = emailsRef.current.find((e) => e.id === id);
     if (!email) return;
 
-    let reward = 0; let logMsg = '';
-    const type = (email.type || 'WORK').toUpperCase();
-    const urgency = (email.urgency || 'MEDIUM').toUpperCase();
-    const sentiment = email.sentiment || 'Professional';
-    const confidenceMultiplier = 0.5 + (email.confidence || 0.5);
+    try {
+      // ── Call the Real Backend RL Environment ──
+      const res = await fetch(`${API_URL}/step`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action_type: actionType.toLowerCase(),
+          email_id: id
+        }),
+      });
 
-    if (type === 'SPAM') {
-      if (actionType === 'DELETE') { reward += 2.0 * confidenceMultiplier; logMsg = 'Blocked Spam'; } 
-      else { reward -= 2.5 * confidenceMultiplier; logMsg = 'Allowed Spam thru'; }
-    } else {
-      if (actionType === 'ESCALATE') {
-        if (urgency === 'HIGH' || sentiment === 'Aggressive') { reward += 1.5; logMsg = `Smart escalation`; } 
-        else { reward -= 1.0; logMsg = 'Unnecessary escalate'; }
-      } else if (actionType === 'OPEN') { reward += 1.0 * confidenceMultiplier; logMsg = `Processed ${type}`; } 
-      else if (actionType === 'DELETE') { reward -= 3.0; logMsg = 'Deleted real email!'; } 
-      else if (actionType === 'DEFER') {
-        if (urgency === 'HIGH') { reward -= 1.0; logMsg = 'Deferred urgent'; } 
-        else { reward -= 0.2; logMsg = 'Delayed response'; }
+      if (!res.ok) throw new Error('Action failed');
+      const result = await res.json();
+      
+      const serverReward = result.reward; // This is the strictly normalized 0.0-1.0 reward
+      const logMsg = result.observation?.step_feedback || 
+                   (actionType === 'DELETE' ? 'Processed Item' : `Action: ${actionType}`);
+
+      setScore((prev) => prev + serverReward);
+      setLastReward({ value: serverReward, timestamp: Date.now() });
+      setEmails((prev) => prev.filter((e) => e.id !== id));
+      if (selectedId === id) setSelectedId(null);
+      setLogs((prev) => [{ 
+        msg: logMsg, 
+        subject: email.subject, 
+        reward: serverReward, 
+        action: actionType, 
+        time: new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit', second:'2-digit'}) 
+      }, ...prev].slice(0, 50));
+
+      // Sync stats
+      if (result.observation?.classifier_stats) {
+        setClassifierStats({ live_classifier: result.observation.classifier_stats });
       }
-    }
 
-    if (sentiment === 'Aggressive' && actionType !== 'ESCALATE' && actionType !== 'OPEN') reward -= 1.0;
-    const waitPenalty = Math.min(0.1 * (email.waitingTime || 0), 2.0);
-    reward = Math.round((reward - waitPenalty) * 100) / 100;
-
-    setScore((prev) => prev + reward);
-    setLastReward({ value: reward, timestamp: Date.now() });
-    setEmails((prev) => prev.filter((e) => e.id !== id));
-    if (selectedId === id) setSelectedId(null);
-    setLogs((prev) => [{ msg: logMsg, subject: email.subject, reward, action: actionType, time: new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit', second:'2-digit'}) }, ...prev].slice(0, 50));
-
-    if (type === 'SPAM' && actionType === 'DELETE') {
-      fetch(`${API_URL}/feedback`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ predicted_spam: true, actual_spam: true }) }).catch(() => {});
+    } catch (e) {
+      console.error("Agentic step failed:", e);
+      setErrMessage("Connection to RL Engine lost. Retrying...");
     }
   }, [selectedId]);
 
