@@ -343,6 +343,10 @@ class EmailEnv:
         - task2: 10 steps × 1.0 = 10.0 raw total (normalized to 1.0)
         - task3: 10 steps × 1.0 = 10.0 raw total (normalized to 1.0)
         """
+        # Guard against uninitialized max_steps
+        if self.max_steps <= 0:
+            return 0.0
+
         # Calculate achievement based on performance metrics
         inbox_cleared = len(self.inbox) == 0
         correct_actions_ratio = (
@@ -350,7 +354,7 @@ class EmailEnv:
             if self.initial_email_count > 0
             else 0.0
         )
-        efficiency_ratio = 1.0 - (self.steps / self.max_steps)
+        efficiency_ratio = max(0.0, 1.0 - (self.steps / self.max_steps))
 
         # Performance score: combines correctness, completion, and efficiency
         # Base: average reward achieved
