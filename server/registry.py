@@ -1,6 +1,31 @@
 from typing import List, Dict, Any, Optional
 from pydantic import BaseModel, Field
 
+def calculate_success(trajectory: List[Dict[str, Any]]) -> float:
+    if not trajectory:
+        return 0.0
+        
+    last_step = trajectory[-1]
+    observation = last_step.get("observation", {})
+    if not isinstance(observation, dict):
+        observation = observation.dict() if hasattr(observation, "dict") else getattr(observation, "__dict__", {})
+        
+    total_reward = observation.get("total_reward", 0.0)
+    task_id = observation.get("task", "task1")
+    
+    # Normalizing bounds mapping to avoid gradient explosion issue
+    task_benchmarks = {
+        "task1": 1.35,  
+        "task2": 3.05,  
+        "task3": 7.00,  
+    }
+    
+    r_max = task_benchmarks.get(task_id, 1.0)
+    if r_max <= 0.0:
+        return 0.0
+        
+    return float(total_reward / r_max)
+
 class Task(BaseModel):
     task_id: str
     name: str
@@ -10,37 +35,10 @@ class Task(BaseModel):
     max_steps: int = 10
     config: Dict[str, Any] = Field(default_factory=dict)
 
-    def grade_task(self, trajectory: List[Dict[str, Any]]) -> float:
-        """
-        Standard OpenEnv grader interface.
-        Evaluates the agent's performance across the entire trajectory.
-        Must return a float between 0.0 and 1.0.
-        """
-        if not trajectory:
-            return 0.0
-
-        # Extract context from the last step (contains environment-calculated rewards)
-        last_step = trajectory[-1]
-        observation = last_step.get("observation", {})
-        info = observation.get("info", {}) if isinstance(observation, dict) else getattr(observation, "info", {})
-        
-        # Calculate success based on total reward and progress
-        # We use a weighted blend of normalized reward and completion efficiency
-        total_reward = observation.get("total_reward", 0.0) if isinstance(observation, dict) else getattr(observation, "total_reward", 0.0)
-        steps = len(trajectory)
-        
-        # Calculate success based on mean normalized reward across steps
-        if steps > 0:
-            score = total_reward / steps
-        else:
-            score = 0.0
-
-        # Add efficiency bonus (fewer steps -> higher score)
-        efficiency = max(0, 1.0 - (steps / self.max_steps))
-        score = (score * 0.8) + (efficiency * 0.2)
-
-        # Strictly clamp to 0.0 - 1.0 range per Phase 2 requirements
-        return float(min(max(score, 0.0), 1.0))
+    def grade_task(self, trajectory) -> float:
+        # Must return a float between 0.0 and 1.0
+        score = calculate_success(trajectory)
+        return min(max(score, 0.0), 1.0)
 
 TASK_REGISTRY = {
     "task1": Task(
