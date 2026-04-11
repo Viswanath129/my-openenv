@@ -174,14 +174,22 @@ export default function App() {
     // Hard clamp to [0.0, 1.0] — absolute guarantee
     reward = Math.max(0.0, Math.min(1.0, Math.round(reward * 100) / 100));
 
-    setScore((prev) => prev + reward);
     setLastReward({ value: reward, timestamp: Date.now() });
+    
+    setLogs((prev) => {
+      const newLogs = [{
+        msg: logMsg, subject: email.subject, reward, action: actionType,
+        time: new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit', second:'2-digit'})
+      }, ...prev].slice(0, 50);
+      
+      // ALIGN FRONTEND & BACKEND: 'score' is current 0.0-1.0 average, not a sum
+      const avg = newLogs.reduce((a, l) => a + l.reward, 0) / newLogs.length;
+      setScore(avg);
+      return newLogs;
+    });
+
     setEmails((prev) => prev.filter((e) => e.id !== id));
     if (selectedId === id) setSelectedId(null);
-    setLogs((prev) => [{
-      msg: logMsg, subject: email.subject, reward, action: actionType,
-      time: new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit', second:'2-digit'})
-    }, ...prev].slice(0, 50));
 
     // Optional: try to sync with backend (may fail in demo mode due to ID mismatch)
     try {
