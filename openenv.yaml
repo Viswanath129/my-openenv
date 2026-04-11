@@ -1,7 +1,10 @@
+spec_version: 1
 name: InboxIQ
-version: "1.0.0"
-description: "InboxIQ — OpenEnv-compliant RL environment for intelligent email inbox triage with ML-powered spam classification, sentiment analysis, and urgency detection. Simulates real-world email management as a sequential decision-making problem."
+type: space
+runtime: fastapi
+app: server.app:app
 port: 7860
+description: "InboxIQ — OpenEnv-compliant RL environment for intelligent email inbox triage."
 hardware: cpu-basic
 tags:
   - openenv
@@ -11,22 +14,25 @@ tags:
 
 tasks:
   - id: task1
-    name: "Single Email Triage"
+    name: "Precise Triage"
     description: "Triage a single email correctly. Tests basic action selection — classify spam vs legitimate and choose the optimal action."
     difficulty: easy
     max_steps: 5
+    prompt: "Your inbox contains one email. Analyze its sentiment, urgency, and spam score. Execute the most appropriate action (open, delete, or escalate) to maximize reward."
 
   - id: task2
-    name: "Backlog Processing"
+    name: "Incentive Cleanup"
     description: "Process a backlog of 3 emails with mixed types (spam, work, support). Tests prioritization and batch decision-making."
     difficulty: medium
     max_steps: 10
+    prompt: "You have a backlog of 3 emails. Some are spam, some are urgent work requests. Process all of them efficiently. Remember: deleting a legitimate email is heavily penalized."
 
   - id: task3
-    name: "Dynamic Inbox Stream"
+    name: "Chaos Management"
     description: "Handle 5 initial emails with continuous random arrivals. Tests real-time triage under time pressure and evolving state."
     difficulty: hard
     max_steps: 20
+    prompt: "Total Chaos! 5 emails are pending, and more may arrive. Prioritize 'Aggressive' sentiment for escalation and 'HIGH' urgency for immediate opening. Efficiency and accuracy are critical."
 
 actions:
   type: object

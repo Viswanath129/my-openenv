@@ -14,9 +14,11 @@ from typing import List, Dict, Optional, Any
 try:
     from server.classifier import EmailClassifier, analyze_sentiment, detect_urgency
     from server.models import Action, Observation, State
+    from server.registry import TASK_REGISTRY
 except ImportError:
     from .classifier import EmailClassifier, analyze_sentiment, detect_urgency
     from .models import Action, Observation, State
+    from .registry import TASK_REGISTRY
 
 try:
     from openenv.core.env_server.interfaces import Environment
@@ -63,14 +65,6 @@ class EmailEnv:
     # Enable concurrent sessions since state is isolated per instance
     SUPPORTS_CONCURRENT_SESSIONS = True
 
-    # Task configs: (initial_emails, max_steps, optimal_reward_estimate)
-    TASK_CONFIG = {
-        "task1": {"count": 1, "max_steps": 5, "optimal": 3.0},
-        "task2": {"count": 3, "max_steps": 10, "optimal": 8.0},
-        "task3": {"count": 5, "max_steps": 20, "optimal": 15.0},
-        "train": {"count": 2, "max_steps": 15, "optimal": 6.0},
-    }
-
     def __init__(self, dataset_path: Optional[str] = None):
         self.inbox: List[Dict] = []
         self.total_reward: float = 0.0
@@ -82,6 +76,7 @@ class EmailEnv:
         self._episode_rewards: List[float] = []
         self.initial_email_count: int = 0  # Track initial inbox size for progress
         self.processed_emails: int = 0  # Track emails processed correctly
+        self.trajectory: List[Dict[str, Any]] = []
 
         # ML classifier for intelligent grading
         self.classifier = EmailClassifier(dataset_path=self.dataset_path)
@@ -173,9 +168,9 @@ class EmailEnv:
 
         self.episode_id = episode_id or str(uuid.uuid4())
 
-        cfg = self.TASK_CONFIG.get(task, self.TASK_CONFIG["train"])
-        self.max_steps = cfg["max_steps"]
-        count = cfg["count"]
+        task_info = TASK_REGISTRY.get(task, TASK_REGISTRY.get("task1"))
+        self.max_steps = task_info.max_steps
+        count = task_info.config.get("count", 1)
         self.inbox = [
             self._get_random_email(
                 is_train=(task in ["train", "task1", "task2", "task3"])
@@ -184,6 +179,7 @@ class EmailEnv:
         ]
         self.initial_email_count = len(self.inbox)
         self.processed_emails = 0
+        self.trajectory = []
 
         # Reset rubric if present
         if hasattr(self, "_reset_rubric"):
@@ -303,15 +299,14 @@ class EmailEnv:
         # Max possible per-step reward is around 10.0 (spam delete + bonuses)
         normalized_reward = max(0.0, min(1.0, (step_reward + 10.0) / 20.0))
 
-        self.total_reward += step_reward
+        self.total_reward += normalized_reward
         self._episode_rewards.append(normalized_reward)
         self.steps += 1
         done = self.steps >= self.max_steps or (len(self.inbox) == 0 and self.steps > 1)
 
         # ── Completion Bonus ──
         if done and len(self.inbox) == 0:
-            bonus = 10.0
-            step_reward += bonus
+            bonus = 0.5 # Normalized bonus
             self.total_reward += bonus
 
         # Apply rubric if present
@@ -324,66 +319,53 @@ class EmailEnv:
                     0.0, min(1.0, normalized_reward + rubric_reward)
                 )
 
-        return self._create_observation(reward=normalized_reward, done=done)
+        obs = self._create_observation(
+            reward=normalized_reward,
+            done=done,
+            error_trace=step_error_trace,
+            step_feedback=current_step_feedback,
+        )
+        
+        # Record to trajectory for standardized grading
+        self.trajectory.append({
+            "action": action,
+            "observation": obs,
+            "reward": normalized_reward,
+            "done": done
+        })
+        
+        return obs
 
     def grader(self) -> float:
         """
-        Normalize episode total reward to [0.0, 1.0] with partial progress credit.
-        Includes efficiency bonus for completing tasks with fewer steps.
-        Deterministic given the same episode trajectory.
+        Standardized grader following the Phase 2 Task Registry pattern.
+        Delegates to the specific task's grade_task(trajectory) method.
         """
-        cfg = self.TASK_CONFIG.get(self.current_task, self.TASK_CONFIG["train"])
-        optimal = cfg["optimal"]
-        worst = -optimal * 1.5
+        task_info = TASK_REGISTRY.get(self.current_task)
+        if task_info:
+            return float(task_info.grade_task(self.trajectory))
+            
+        # Fallback logic for training or unidentified tasks
+        if not self._episode_rewards: return 0.0
+        return float(sum(self._episode_rewards) / len(self._episode_rewards))
 
-        # Base score from total reward
-        if optimal == worst:
-            base_score = 0.5
-        else:
-            raw = (self.total_reward - worst) / (optimal - worst)
-            base_score = min(max(raw, 0.0), 1.0)
-
-        # Progress bonus: reward for processing emails correctly
-        progress_score = 0.0
-        if self.initial_email_count > 0:
-            progress_ratio = self.processed_emails / self.initial_email_count
-            progress_score = (
-                progress_ratio * 0.3
-            )  # Up to 30% bonus for perfect processing
-
-        # Efficiency bonus: reward for completing quickly
-        efficiency_score = 0.0
-        if self.steps > 0 and self.initial_email_count > 0:
-            expected_steps = self.initial_email_count * 1.5  # Expected steps per email
-            efficiency_ratio = min(expected_steps / self.steps, 1.0)
-            efficiency_score = efficiency_ratio * 0.2  # Up to 20% bonus for efficiency
-
-        # Combine scores
-        final_score = base_score + progress_score + efficiency_score
-        final_score = max(0.0, min(1.0, final_score))
-
-        return round(final_score, 4)
-
-    def state(self) -> Dict:
-        """Return the current environment state as an observation dict."""
-        if not hasattr(self, "episode_id") or getattr(self, "episode_id") is None:
+    def state(self) -> State:
+        """Return the current environment state."""
+        if not hasattr(self, "episode_id") or self.episode_id is None:
             import uuid
 
             self.episode_id = str(uuid.uuid4())
-
-        return {
-            "inbox": self.inbox,
-            "steps": self.steps,
-            "step_count": self.steps,
-            "episode_id": self.episode_id,
-            "task": self.current_task,
-            "max_steps": self.max_steps,
-            "total_reward": round(self.total_reward, 2),
-            "classifier_stats": self.classifier.stats,
-        }
+        return State(
+            episode_id=self.episode_id,
+            step_count=self.steps,
+        )
 
     def _create_observation(
-        self, reward: float = 0.0, done: bool = False
+        self,
+        reward: float = 0.0,
+        done: bool = False,
+        error_trace: Optional[str] = None,
+        step_feedback: Optional[str] = None,
     ) -> Observation:
         """Create an Observation object from current state."""
         info = {
@@ -405,4 +387,6 @@ class EmailEnv:
             reward=reward,
             done=done,
             info=info,
+            error_trace=error_trace,
+            step_feedback=step_feedback,
         )
