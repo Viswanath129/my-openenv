@@ -349,6 +349,7 @@ class EmailEnv:
         return State(
             episode_id=self.episode_id,
             step_count=self.steps,
+            seed=getattr(self, "seed", None),
         )
 
     def _create_observation(

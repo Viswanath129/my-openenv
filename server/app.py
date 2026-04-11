@@ -33,13 +33,13 @@ try:
     from server.models import Action, StepResult, Observation, State
     from server.classifier import EmailClassifier
     from server.imap_client import validate_credentials, fetch_live_emails
-    from server.registry import TASK_REGISTRY
+    from server.registry import TASK_REGISTRY, Task
 except ImportError:
     from .environment import EmailEnv
     from .models import Action, StepResult, Observation, State
     from .classifier import EmailClassifier
     from .imap_client import validate_credentials, fetch_live_emails
-    from .registry import TASK_REGISTRY
+    from .registry import TASK_REGISTRY, Task
 
 # Load env vars early
 load_dotenv()
@@ -202,6 +202,25 @@ def step(action: Action):
 def state():
     """Return the current environment state."""
     return env.state()
+
+
+@app.get("/metadata")
+def metadata():
+    """Return OpenEnv metadata for runtime validators and clients."""
+    return {
+        "name": "InboxIQ",
+        "description": "OpenEnv-compliant reinforcement learning environment for intelligent email inbox triage",
+        "version": "3.0",
+        "tasks": [
+            {
+                "id": task.task_id,
+                "name": task.name,
+                "difficulty": task.difficulty,
+                "max_steps": task.max_steps,
+            }
+            for task in TASK_REGISTRY.values()
+        ],
+    }
 
 
 @app.get("/tasks", response_model=list[Task])

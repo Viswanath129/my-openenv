@@ -231,7 +231,7 @@ export default function App() {
         else if (target.waitingTime > 25) action = 'OPEN';
         else action = 'DEFER';
         handleAction(target.id, action);
-      }, 6000); // Slowed to 6s for readable demo experience
+      }, Math.max(200, simSpeed * 0.8)); // Agent speed dynamically matches email generation rate
     } else clearInterval(autoAgentRef.current);
     return () => clearInterval(autoAgentRef.current);
   }, [isAuto, isRunning, handleAction]);
@@ -399,11 +399,12 @@ export default function App() {
                 <div className="bg-surface-container-lowest rounded-2xl flex-1 border border-slate-100 shadow-sm flex flex-col min-h-[400px]">
                   <div className="px-6 py-5 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
                     <h3 className="font-headline font-bold text-lg text-slate-800">Live Intelligence Feed</h3>
-                    <select className="text-xs font-bold text-primary bg-primary-fixed border-none rounded-lg px-3 py-1 cursor-pointer" value={simSpeed} onChange={(e) => setSimSpeed(Number(e.target.value))}>
-                      <option value={8000}>Slow (8s)</option>
-                      <option value={5000}>Normal (5s)</option>
-                      <option value={2000}>Turbo (2s)</option>
-                    </select>
+                    <div className="flex items-center gap-1 bg-slate-200/50 p-1 rounded-lg">
+                      <button onClick={() => setSimSpeed(5000)} className={`px-2 py-1 rounded text-[10px] font-bold transition-all ${simSpeed === 5000 ? 'bg-white shadow-sm text-slate-800' : 'text-slate-500 hover:bg-slate-200'}`}>0.2/s</button>
+                      <button onClick={() => setSimSpeed(2000)} className={`px-2 py-1 rounded text-[10px] font-bold transition-all ${simSpeed === 2000 ? 'bg-white shadow-sm text-slate-800' : 'text-slate-500 hover:bg-slate-200'}`}>0.5/s</button>
+                      <button onClick={() => setSimSpeed(1000)} className={`px-2 py-1 rounded text-[10px] font-bold transition-all ${simSpeed === 1000 ? 'bg-white shadow-sm text-slate-800' : 'text-slate-500 hover:bg-slate-200'}`}>1.0/s</button>
+                      <button onClick={() => setSimSpeed(200)} className={`px-2 py-1 rounded text-[10px] font-bold transition-all ${simSpeed === 200 ? 'bg-white shadow-sm text-primary' : 'text-slate-500 hover:bg-slate-200'}`}>5.0/s</button>
+                    </div>
                   </div>
                   
                   <div className="flex-1 overflow-y-auto p-3 lg:p-4 pb-8 space-y-3">
