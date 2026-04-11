@@ -200,41 +200,51 @@ class EmailEnv:
     def complex_grader(self, email: Dict, action_type: str) -> float:
         """
         Native 0.0 – 1.0 reward function.
-        Strictly adheres to OpenEnv Phase 2 requirements for normalized step rewards.
+        Every action maps to a reward strictly within [0.0, 1.0].
+        No negative values exist.
         """
-        reward = 0.1  # Minimal baseline for participating
         is_spam = email.get("type") == "SPAM"
         if "ground_truth" in email:
             is_spam = email["ground_truth"] == 1
 
         confidence = email.get("confidence", 0.5)
-        # Normalize confidence influence to keep rewards within [0, 1]
-        
-        # ── Core Action Rewards ──
-        if is_spam:
-            if action_type == "delete":
-                reward = 0.8 * confidence # Clean spam deletion
+        urgency = email.get("urgency", "MEDIUM")
+        sentiment = email.get("sentiment", "Professional")
+
+        # ── Action-specific reward mapping ──
+        if action_type == "delete":
+            if is_spam:
+                reward = 0.4 + (0.4 * confidence)  # 0.4–0.8
             else:
-                reward = 0.05 # Failure to identify spam
+                reward = 0.0  # CRITICAL: Deleting real mail = total failure
+        elif action_type == "open":
+            if not is_spam:
+                reward = 0.35 + (0.35 * confidence)  # 0.35–0.70
+            else:
+                reward = 0.05  # Opening spam = near-failure
+        elif action_type == "escalate":
+            if urgency == "HIGH" or sentiment == "Aggressive":
+                reward = 0.7 + (0.2 * confidence)  # 0.7–0.9
+            elif not is_spam:
+                reward = 0.3  # Unnecessary escalation
+            else:
+                reward = 0.05  # Escalating spam
+        elif action_type == "defer":
+            if urgency == "HIGH":
+                reward = 0.1  # Deferring urgent = bad
+            else:
+                reward = 0.2  # Low-urgency defer = acceptable
         else:
-            if action_type in ["open", "escalate"]:
-                reward = 0.7 * confidence
-                if action_type == "escalate" and email.get("urgency") == "HIGH":
-                    reward += 0.2 # Bonus for proper escalation
-            elif action_type == "delete":
-                reward = 0.0 # Critical Error: Deleting real mail
-        
-        # ── Sentiment Bonus (Micro-positive) ──
-        if email.get("sentiment") == "Aggressive" and action_type == "escalate":
-            reward = min(1.0, reward + 0.1)
+            reward = 0.05  # Unknown action
 
-        # ── Wait Penalty (Multiplier Decay) ──
-        # Ensures that even a correct action is worth less if delayed
+        # ── Wait Decay (multiplier, never goes negative) ──
         wait_steps = email.get("wait", 0)
-        reward *= (0.85 ** wait_steps)
+        reward *= (0.9 ** wait_steps)
 
+        # ── Final clamp ──
+        reward = float(max(0.0, min(1.0, reward)))
         self.classifier.record_reward(reward)
-        return round(float(max(0.01, min(0.99, reward))), 4)
+        return round(reward, 4)
 
     def step(self, action: Action, timeout_s: Optional[float] = None) -> Observation:
         """
@@ -331,16 +341,24 @@ class EmailEnv:
 
     def grader(self) -> float:
         """
-        Standardized grader following the Phase 2 Task Registry pattern.
-        Delegates to the specific task's grade_task(trajectory) method.
+        Min-Max normalized grader per OpenEnv Phase 2 specification.
+        Uses task-specific theoretical max to produce a [0.0, 1.0] score.
+        An optimal agent gets 1.0. A random agent gets ~0.2.
         """
-        task_info = TASK_REGISTRY.get(self.current_task)
-        if task_info:
-            return float(task_info.grade_task(self.trajectory))
-            
-        # Fallback logic for training or unidentified tasks
-        if not self._episode_rewards: return 0.0
-        return float(sum(self._episode_rewards) / len(self._episode_rewards))
+        # Task-specific theoretical max rewards
+        TASK_BASELINES = {
+            "task1": {"min": 0.0, "max": 1.5},   # 1 email: ~0.9 + bonus
+            "task2": {"min": 0.0, "max": 4.0},   # 3 emails: ~0.8*3 + progress + bonus
+            "task3": {"min": 0.0, "max": 8.0},   # 5 emails: ~0.8*5 + progress + bonus
+        }
+        
+        limits = TASK_BASELINES.get(self.current_task, {"min": 0.0, "max": 3.0})
+        
+        if limits["max"] == limits["min"]:
+            return 0.5
+        
+        score = (self.total_reward - limits["min"]) / (limits["max"] - limits["min"])
+        return float(max(0.0, min(1.0, score)))
 
     def state(self) -> State:
         """Return the current environment state."""
