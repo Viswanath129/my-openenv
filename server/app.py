@@ -27,12 +27,12 @@ def _clamp_score(v: float) -> float:
 
 try:
     from server.environment import EmailEnv
-    from server.models import Action
+    from server.models import Action, StepResult, Observation
     from server.classifier import EmailClassifier
     from server.imap_client import validate_credentials, fetch_live_emails
 except ImportError:
     from .environment import EmailEnv
-    from .models import Action
+    from .models import Action, StepResult, Observation
     from .classifier import EmailClassifier
     from .imap_client import validate_credentials, fetch_live_emails
 
@@ -128,13 +128,13 @@ else:
 # OpenEnv Core Endpoints
 # ══════════════════════════════════════════════════════════════════════════════
 
-@app.post("/reset")
+@app.post("/reset", response_model=Observation)
 def reset(task: str = "train"):
     """Reset the environment and return the initial observation."""
     return env.reset(task=task)
 
 
-@app.post("/step")
+@app.post("/step", response_model=StepResult)
 def step(action: Action):
     """Execute one action and return (observation, reward, done, info)."""
     obs, reward, done, info = env.step(action.model_dump())
