@@ -2,7 +2,7 @@
 InboxIQ RL Environment v3.0
 - ML-powered email classification (TF-IDF + Naive Bayes)
 - Confidence-weighted reward shaping
-- Three difficulty tiers: easy → medium → hard
+- Three difficulty tiers: easy  medium  hard
 - Deterministic grading normalized to [0.0, 1.0]
 """
 
@@ -28,7 +28,7 @@ except ImportError:
 
 SENTIMENTS = ["Aggressive", "Professional", "Casual"]
 
-# Resolve dataset path — try multiple locations
+# Resolve dataset path  try multiple locations
 _possible_paths = [
     os.path.join(
         os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
@@ -53,13 +53,13 @@ for path in _possible_paths:
 
 class EmailEnv:
     """
-    InboxIQ — OpenEnv-compliant RL environment for email triage.
+    InboxIQ  OpenEnv-compliant RL environment for email triage.
 
     Interface:
-        reset(task) → observation
-        step(action) → (observation, reward, done, info)
-        state() → current observation
-        grader() → normalized score [0.0, 1.0]
+        reset(task)  observation
+        step(action)  (observation, reward, done, info)
+        state()  current observation
+        grader()  normalized score [0.0, 1.0]
     """
 
     # Enable concurrent sessions since state is isolated per instance
@@ -85,7 +85,7 @@ class EmailEnv:
     def _load_dataset(self):
         """Load dataset rows into memory."""
         if not self.dataset_path:
-            print("[InboxIQ] No dataset path configured — using simulation fallback.")
+            print("[InboxIQ] No dataset path configured  using simulation fallback.")
             return
         try:
             print(f"[InboxIQ] Loading dataset from {self.dataset_path}...")
@@ -199,7 +199,7 @@ class EmailEnv:
 
     def complex_grader(self, email: Dict, action_type: str) -> float:
         """
-        Native 0.0 – 1.0 reward function.
+        Native 0.0  1.0 reward function.
         Every action maps to a reward strictly within [0.0, 1.0].
         No negative values exist.
         """
@@ -211,20 +211,20 @@ class EmailEnv:
         urgency = email.get("urgency", "MEDIUM")
         sentiment = email.get("sentiment", "Professional")
 
-        # ── Action-specific reward mapping ──
+        #  Action-specific reward mapping 
         if action_type == "delete":
             if is_spam:
-                reward = 0.4 + (0.4 * confidence)  # 0.4–0.8
+                reward = 0.4 + (0.4 * confidence)  # 0.40.8
             else:
                 reward = 0.0  # CRITICAL: Deleting real mail = total failure
         elif action_type == "open":
             if not is_spam:
-                reward = 0.35 + (0.35 * confidence)  # 0.35–0.70
+                reward = 0.35 + (0.35 * confidence)  # 0.350.70
             else:
                 reward = 0.05  # Opening spam = near-failure
         elif action_type == "escalate":
             if urgency == "HIGH" or sentiment == "Aggressive":
-                reward = 0.7 + (0.2 * confidence)  # 0.7–0.9
+                reward = 0.7 + (0.2 * confidence)  # 0.70.9
             elif not is_spam:
                 reward = 0.3  # Unnecessary escalation
             else:
@@ -237,16 +237,16 @@ class EmailEnv:
         else:
             reward = 0.05  # Unknown action
 
-        # ── Wait Decay (multiplier, never goes negative) ──
+        #  Wait Decay (multiplier, never goes negative) 
         wait_steps = email.get("wait", 0)
-        reward *= (0.9 ** wait_steps)
+        reward *= 0.9**wait_steps
 
-        # ── Final clamp ──
+        #  Final clamp 
         reward = float(max(0.0, min(1.0, reward)))
         self.classifier.record_reward(reward)
         return round(reward, 4)
 
-    def step(self, action: Action, timeout_s: Optional[float] = None) -> Observation:
+def step(self, action: Action, timeout_s: Optional[float] = None) -> Observation:
         """
         Execute one step in the environment.
         Returns: Observation with reward, done status, and metadata
@@ -255,7 +255,7 @@ class EmailEnv:
         email_id = action.email_id
 
         target_email = next((e for e in self.inbox if e["id"] == email_id), None)
-        step_reward = 0.05  # Minimal baseline reward for participating (0.0–1.0 compliant)
+        step_reward = 0.05  # Minimal baseline reward for participating (0.01.0 compliant)
 
         # Track observation telemetry for this step
         step_error_trace = None
@@ -287,6 +287,9 @@ class EmailEnv:
             progress_reward = progress_ratio * 0.5  # Up to 0.5 bonus for full progress
             step_reward += progress_reward
 
+        # Clamp step_reward to [0.0, 1.0]
+        step_reward = float(max(0.0, min(1.0, step_reward)))
+
         # Tick wait counters for remaining emails
         for email in self.inbox:
             email["wait"] += 1
@@ -297,46 +300,32 @@ class EmailEnv:
                 self._get_random_email(is_train=(self.current_task != "eval"))
             )
 
-        # ── HARD CLAMP: Guarantee 0.0–1.0 output ──
-        # This is the absolute last line of defense.
-        normalized_reward = float(max(0.0, min(1.0, step_reward)))
-
-        self.total_reward += normalized_reward
-        self._episode_rewards.append(normalized_reward)
+        self.total_reward += step_reward
+        self._episode_rewards.append(step_reward)
         self.steps += 1
         done = self.steps >= self.max_steps or (len(self.inbox) == 0 and self.steps > 1)
 
-        # ── Completion Bonus ──
+        # Completion Bonus: if done and inbox empty, add +0.5 to total_reward
         if done and len(self.inbox) == 0:
-            bonus = 0.5 # Normalized bonus
-            self.total_reward += bonus
-            normalized_reward = min(1.0, normalized_reward + 0.1) # Small step nudge
-
-        # Apply rubric if present
-        if hasattr(self, "_apply_rubric"):
-            rubric_reward = self._apply_rubric(
-                action, None
-            )  # We don't have observation yet
-            if rubric_reward != 0.0:
-                normalized_reward = max(
-                    0.0, min(1.0, normalized_reward + rubric_reward)
-                )
+            self.total_reward += 0.5
 
         obs = self._create_observation(
-            reward=normalized_reward,
+            reward=step_reward,
             done=done,
             error_trace=step_error_trace,
             step_feedback=current_step_feedback,
         )
-        
+
         # Record to trajectory for standardized grading
-        self.trajectory.append({
-            "action": action,
-            "observation": obs,
-            "reward": normalized_reward,
-            "done": done
-        })
-        
+        self.trajectory.append(
+            {
+                "action": action,
+                "observation": obs,
+                "reward": step_reward,
+                "done": done,
+            }
+        )
+
         return obs
 
     def grader(self) -> float:
@@ -347,16 +336,16 @@ class EmailEnv:
         """
         # Task-specific theoretical max rewards
         TASK_BASELINES = {
-            "task1": {"min": 0.0, "max": 1.5},   # 1 email: ~0.9 + bonus
-            "task2": {"min": 0.0, "max": 4.0},   # 3 emails: ~0.8*3 + progress + bonus
-            "task3": {"min": 0.0, "max": 8.0},   # 5 emails: ~0.8*5 + progress + bonus
+            "task1": {"min": 0.0, "max": 1.5},  # 1 email: ~0.9 + bonus
+            "task2": {"min": 0.0, "max": 4.0},  # 3 emails: ~0.8*3 + progress + bonus
+            "task3": {"min": 0.0, "max": 8.0},  # 5 emails: ~0.8*5 + progress + bonus
         }
-        
+
         limits = TASK_BASELINES.get(self.current_task, {"min": 0.0, "max": 3.0})
-        
+
         if limits["max"] == limits["min"]:
             return 0.5
-        
+
         score = (self.total_reward - limits["min"]) / (limits["max"] - limits["min"])
         return float(max(0.0, min(1.0, score)))
 
@@ -382,7 +371,7 @@ class EmailEnv:
         info = {
             "total": round(self.total_reward, 2),
             "classifier_stats": self.classifier.stats,
-            "episode_id": getattr(self, "episode_id", "N/A")
+            "episode_id": getattr(self, "episode_id", "N/A"),
         }
 
         if done:
@@ -401,7 +390,7 @@ class EmailEnv:
             info=info,
             error_trace=error_trace,
             step_feedback=step_feedback,
-            html_observation=self._generate_html_table()
+            html_observation=self._generate_html_table(),
         )
 
     def _generate_html_table(self) -> str:
@@ -412,7 +401,7 @@ class EmailEnv:
         html = "<table border='1' style='border-collapse: collapse; width: 100%; font-family: sans-serif; border: 1px solid #ddd;'>"
         html += "<tr style='background-color: #f8f9fa; color: #333;'><th>ID</th><th>Sender</th><th>Subject</th><th>Urgency</th><th>Sentiment</th><th>Spam Prob</th></tr>"
         for email in self.inbox:
-            urgency = email.get('urgency', 'LOW')
+            urgency = email.get("urgency", "LOW")
             row_bg = "#ffffff"
             if urgency == "HIGH":
                 row_bg = "#fff5f5"

@@ -63,7 +63,7 @@ env = EmailEnv()
 async def validation_exception_handler(request, exc):
     """
     Gracefully handles action schema hallucinations by the OpenEnv agents.
-    If the agent submits a malformed Action, penalty is applied but episode continues.
+    If the agent submits a malformed Action, a 0.0 reward step is recorded.
     """
     error_msg = f"Action Schema Error: {str(exc)}"
     
@@ -72,14 +72,19 @@ async def validation_exception_handler(request, exc):
     env.total_reward += 0.0
     env._episode_rewards.append(0.0)
     
-    # Construct the error observation
-    obs = env.state()
-    obs["error_trace"] = error_msg
-    obs["step_feedback"] = "Invalid action parameters provided. Learn the schema."
-    
-    # Wrap in the mandatory StepResponse/StepResult schema format expected by OpenEnv
+    # Wrap in the mandatory StepResult format
     response_payload = {
-        "observation": obs,
+        "observation": {
+            "inbox": [e for e in env.inbox] if hasattr(env, 'inbox') else [],
+            "steps": env.steps,
+            "task": getattr(env, 'current_task', 'train'),
+            "max_steps": getattr(env, 'max_steps', 10),
+            "total_reward": round(env.total_reward, 2),
+            "reward": 0.0,
+            "done": env.steps >= env.max_steps,
+            "error_trace": error_msg,
+            "step_feedback": "Invalid action parameters provided. Learn the schema."
+        },
         "reward": 0.0,
         "done": env.steps >= env.max_steps,
         "info": {}
@@ -175,15 +180,15 @@ def reset(task: str = "train"):
     return env.reset(task=task)
 
 
-@app.post("/step", response_model=StepResult)
+@app.post("/step")
 def step(action: Action):
     """Execute one action and return (observation, reward, done, info)."""
-    obs, reward, done, info = env.step(action.model_dump())
+    obs = env.step(action)
     return {
-        "observation": obs,
-        "reward": _clamp_score(reward),
-        "done": done,
-        "info": info
+        "observation": obs.model_dump() if hasattr(obs, 'model_dump') else obs,
+        "reward": _clamp_score(obs.reward if hasattr(obs, 'reward') else 0.0),
+        "done": obs.done if hasattr(obs, 'done') else False,
+        "info": obs.info if hasattr(obs, 'info') else {}
     }
 
 
@@ -197,12 +202,6 @@ def state():
 def health():
     """Health check endpoint for Docker and monitoring."""
     return {"status": "healthy", "environment": "InboxIQ"}
-
-
-@app.get("/health")
-def health():
-    """Health check endpoint for Docker and Hugging Face."""
-    return {"status": "ok"}
 
 
 @app.get("/grader")
