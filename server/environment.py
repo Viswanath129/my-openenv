@@ -385,7 +385,7 @@ class EmailEnv:
             steps=self.steps,
             task=self.current_task,
             max_steps=self.max_steps,
-            total_reward=round(self.total_reward, 2),
+            total_reward=round(self.grader(), 2),
             classifier_stats=self.classifier.stats,
             reward=reward,
             done=done,

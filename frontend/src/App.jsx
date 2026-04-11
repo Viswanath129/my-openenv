@@ -369,10 +369,10 @@ export default function App() {
                 {/* Stats Row */}
                 <div className="grid grid-cols-2 md:grid-cols-3 gap-4 lg:gap-6">
                   <div className="bg-surface-container-lowest p-5 lg:p-6 rounded-2xl flex flex-col justify-between shadow-sm border-b-4 border-primary">
-                    <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Current Reward</span>
+                    <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Current Task Reward</span>
                     <div className="flex items-end gap-2 mt-2">
-                      <p className="font-headline text-3xl lg:text-4xl font-extrabold text-on-surface">{lastReward ? lastReward.value.toFixed(2) : '0.00'}</p>
-                      <span className="text-[10px] font-bold text-slate-400 mb-1.5">/ 1.00</span>
+                       <p className="font-headline text-3xl lg:text-4xl font-extrabold text-on-surface">{logs.length > 0 ? (logs.reduce((a, l) => a + l.reward, 0) / logs.length).toFixed(2) : '0.00'}</p>
+                       <span className="text-[10px] font-bold text-slate-400 mb-1.5">/ 1.00</span>
                     </div>
                   </div>
                   <div className="bg-surface-container-lowest p-5 lg:p-6 rounded-2xl flex flex-col justify-between shadow-sm">
