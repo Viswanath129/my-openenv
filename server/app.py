@@ -22,8 +22,8 @@ from typing import Dict, Optional
 
 
 def _clamp_score(v: float) -> float:
-    """Clamp to strict (0, 1) — validator rejects 0.0 and 1.0."""
-    return max(0.01, min(0.99, v))
+    """Clamp to [0.0, 1.0] range per OpenEnv specification."""
+    return max(0.0, min(1.0, v))
 
 try:
     from server.environment import EmailEnv

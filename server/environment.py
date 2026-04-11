@@ -227,8 +227,12 @@ class EmailEnv:
                 self._get_random_email(is_train=(self.current_task != "eval"))
             )
 
+        # Normalize reward to [0.0, 1.0] range per OpenEnv specification
+        # Max possible per-step reward is around 10.0 (spam delete + bonuses)
+        normalized_reward = max(0.0, min(1.0, (step_reward + 10.0) / 20.0))
+        
         self.total_reward += step_reward
-        self._episode_rewards.append(step_reward)
+        self._episode_rewards.append(normalized_reward)
         self.steps += 1
         done = self.steps >= self.max_steps or (len(self.inbox) == 0 and self.steps > 1)
 
@@ -247,7 +251,7 @@ class EmailEnv:
             gs = self.grader()
             info["grader_score"] = max(0.01, min(0.99, gs))
 
-        return self.state(), step_reward, done, info
+        return self.state(), normalized_reward, done, info
 
     def grader(self) -> float:
         """
@@ -264,8 +268,8 @@ class EmailEnv:
 
         raw = (self.total_reward - worst) / (optimal - worst)
         clamped = min(max(raw, 0.0), 1.0)
-        # Strict (0, 1) — validator rejects exactly 0.0 or 1.0
-        clamped = max(0.01, min(0.99, clamped))
+        # Clamp to [0.0, 1.0] range per OpenEnv specification
+        clamped = max(0.0, min(1.0, clamped))
         return round(clamped, 4)
 
     def state(self) -> Dict:
