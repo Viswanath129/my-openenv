@@ -1,10 +1,11 @@
 from typing import List, Dict, Any, Optional
 from pydantic import BaseModel, Field
+SCORE_EPSILON = 1e-4
 
 
 def calculate_success(trajectory: List[Dict[str, Any]]) -> float:
     if not trajectory:
-        return 0.0
+        return SCORE_EPSILON
 
     last_step = trajectory[-1]
     observation = last_step.get("observation", {})
@@ -28,10 +29,15 @@ def calculate_success(trajectory: List[Dict[str, Any]]) -> float:
     else:
         r_max = 1.0
     if r_max <= 0.0:
-        return 0.0
+        return SCORE_EPSILON
 
     score = float(total_reward / r_max)
-    return min(max(score, 0.0), 1.0)
+    score = min(max(score, 0.0), 1.0)
+    if score <= 0.0:
+        return SCORE_EPSILON
+    if score >= 1.0:
+        return 1.0 - SCORE_EPSILON
+    return score
 
 
 class Task(BaseModel):
@@ -44,9 +50,13 @@ class Task(BaseModel):
     config: Dict[str, Any] = Field(default_factory=dict)
 
     def grade_task(self, trajectory) -> float:
-        # Must return a float between 0.0 and 1.0
+        # Scaler validator requires strict open interval (0, 1).
         score = calculate_success(trajectory)
-        return min(max(score, 0.0), 1.0)
+        if score <= 0.0:
+            return SCORE_EPSILON
+        if score >= 1.0:
+            return 1.0 - SCORE_EPSILON
+        return score
 
 
 TASK_REGISTRY = {

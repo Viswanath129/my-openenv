@@ -45,13 +45,24 @@ def format_bool(x: bool) -> str:
 
 
 def clamp_score(v: float) -> float:
-    """Clamp a score to [0.0, 1.0] range."""
-    return max(0.0, min(1.0, v))
+    """Clamp a score to strict (0.0, 1.0) range."""
+    eps = 1e-4
+    return max(eps, min(1.0 - eps, v))
+
+def strict_task_score(v: float) -> float:
+    """Clamp task score to strict open interval (0, 1) for validator compatibility."""
+    eps = 1e-4
+    c = clamp_score(v)
+    if c <= 0.0:
+        return eps
+    if c >= 1.0:
+        return 1.0 - eps
+    return c
 
 
 def grade_task(correct: bool) -> float:
-    """Simple pass/fail grading that stays strictly inside (0, 1)."""
-    return 0.99 if correct else 0.01
+    """Simple pass/fail grading that stays strictly inside (0.0, 1.0)."""
+    return 0.9999 if correct else 0.0001
 
 
 # ══════════════════════════════════════
@@ -75,9 +86,9 @@ def log_step(step: int, action: str, reward: float, done: bool, error: Optional[
 def log_end(success: bool, steps: int, score: float, rewards: List[float]):
     clamped_rewards = [clamp_score(r) for r in rewards]
     rewards_str = ",".join(f"{r:.2f}" for r in clamped_rewards)
-    clamped_score = clamp_score(score)
+    clamped_score = strict_task_score(score)
     print(
-        f"[END] success={format_bool(success)} steps={steps} score={clamped_score:.2f} rewards={rewards_str}",
+        f"[END] success={format_bool(success)} steps={steps} score={clamped_score:.4f} rewards={rewards_str}",
         flush=True,
     )
 
@@ -324,7 +335,7 @@ def main():
             log_step(
                 step=1, action="none", reward=0.0, done=True, error="env_unavailable"
             )
-            log_end(success=False, steps=0, score=0.0, rewards=[])
+            log_end(success=False, steps=0, score=0.0001, rewards=[])
             print("-" * 50, file=sys.stderr, flush=True)
             continue  # Skip to next task
 
@@ -332,7 +343,7 @@ def main():
         task_score = grade_task(success)
         try:
             grader = http_get(f"{ENV_URL}/grader")
-            task_score = clamp_score(grader.get("score", task_score))
+            task_score = strict_task_score(grader.get("score", task_score))
         except Exception:
             pass  # Already set above
 

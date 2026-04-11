@@ -27,6 +27,7 @@ except ImportError:
     Environment = object
 
 SENTIMENTS = ["Aggressive", "Professional", "Casual"]
+SCORE_EPSILON = 1e-4
 
 # Resolve dataset path  try multiple locations
 _possible_paths = [
@@ -338,10 +339,15 @@ class EmailEnv:
             # Email i (0-indexed) is processed after i wait ticks, so best reward is 0.9**i.
             r_max = float(sum(0.9**i for i in range(max(1, initial_count))))
         if r_max <= 0.0:
-            return 0.0
+            return SCORE_EPSILON
 
-        normalized = self.total_reward / r_max
-        return float(max(0.0, min(1.0, normalized)))
+        normalized = float(max(0.0, min(1.0, self.total_reward / r_max)))
+        # Hackathon validator expects strict interval (0, 1), not inclusive bounds.
+        if normalized <= 0.0:
+            return SCORE_EPSILON
+        if normalized >= 1.0:
+            return 1.0 - SCORE_EPSILON
+        return normalized
 
     def state(self) -> State:
         """Return the current environment state."""

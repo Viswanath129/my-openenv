@@ -24,8 +24,9 @@ from fastapi.responses import JSONResponse
 
 
 def _clamp_score(v: float) -> float:
-    """Clamp to [0.0, 1.0] range per OpenEnv specification."""
-    return max(0.0, min(1.0, v))
+    """Clamp to strict (0.0, 1.0) range per OpenEnv Phase 2 requirements."""
+    eps = 1e-4
+    return max(eps, min(1.0 - eps, v))
 
 
 try:

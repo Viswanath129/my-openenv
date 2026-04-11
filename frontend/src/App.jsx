@@ -5,7 +5,7 @@ import {
   BarChart3, CheckCircle2, Brain, AlertTriangle, Eye, Timer
 } from 'lucide-react';
 
-const API_URL = import.meta.env.DEV ? 'http://localhost:8000' : '';
+const API_URL = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? 'http://localhost:7860' : '');
 
 const URGENCY_LEVELS = {
   HIGH:   { label: 'High',   color: 'bg-red-500',     text: 'text-red-700',     bg: 'bg-red-50' },
@@ -35,7 +35,6 @@ export default function App() {
   const [accounts, setAccounts] = useState([]);
   const [selectedId, setSelectedId] = useState(null);
   const [score, setScore] = useState(0);
-  const [lastReward, setLastReward] = useState(null);
   const [isAuto, setIsAuto] = useState(false);
   const [isRunning, setIsRunning] = useState(false);
   const [simSpeed, setSimSpeed] = useState(8000);
@@ -63,7 +62,9 @@ export default function App() {
         const data = await res.json();
         setAccounts(data.accounts || []);
       }
-    } catch (e) {}
+    } catch {
+      // Ignore transient account fetch errors.
+    }
   };
 
   const fetchClassifierStats = async () => {
@@ -73,7 +74,9 @@ export default function App() {
         const data = await res.json();
         setClassifierStats(data);
       }
-    } catch (e) {}
+    } catch {
+      // Ignore transient stats fetch errors.
+    }
   };
 
   const addAccount = async (e) => {
@@ -133,7 +136,9 @@ export default function App() {
           })).slice(0, 30);
         });
       }
-    } catch (e) {} finally { setIsSyncing(false); }
+    } catch {
+      // Ignore transient polling errors; next tick will retry.
+    } finally { setIsSyncing(false); }
   }, [isSyncing]);
 
   const handleAction = useCallback(async (id, actionType) => {
@@ -144,27 +149,26 @@ export default function App() {
     const type = (email.type || 'WORK').toUpperCase();
     const urgency = (email.urgency || 'MEDIUM').toUpperCase();
     const sentiment = email.sentiment || 'Professional';
-    const confidence = email.confidence || 0.5;
     const isSpam = type === 'SPAM';
     const action = actionType.toUpperCase();
 
-    let reward = 0.05; // baseline
+    let reward = 0.0;
     let logMsg = `Action: ${action}`;
 
     if (action === 'DELETE') {
-      if (isSpam) { reward = 0.4 + (0.4 * confidence); logMsg = 'Blocked Spam'; }
+      if (isSpam) { reward = 1.0; logMsg = 'Blocked Spam'; }
       else { reward = 0.0; logMsg = 'Deleted real email!'; }
     } else if (action === 'OPEN') {
-      if (!isSpam) { reward = 0.35 + (0.35 * confidence); logMsg = `Processed ${type}`; }
+      if (!isSpam) { reward = 1.0; logMsg = `Processed ${type}`; }
       else { reward = 0.05; logMsg = 'Opened spam'; }
     } else if (action === 'ESCALATE') {
-      if (urgency === 'HIGH' || sentiment === 'Aggressive') {
-        reward = 0.7 + (0.2 * confidence); logMsg = 'Smart escalation';
-      } else if (!isSpam) { reward = 0.3; logMsg = 'Unnecessary escalation'; }
+      if ((urgency === 'HIGH' || sentiment === 'Aggressive') && !isSpam) {
+        reward = 1.0; logMsg = 'Smart escalation';
+      } else if (!isSpam) { reward = 0.55; logMsg = 'Unnecessary escalation'; }
       else { reward = 0.05; logMsg = 'Escalated spam'; }
     } else if (action === 'DEFER') {
       if (urgency === 'HIGH') { reward = 0.1; logMsg = 'Deferred urgent'; }
-      else { reward = 0.2; logMsg = 'Delayed response'; }
+      else { reward = 0.15; logMsg = 'Delayed response'; }
     }
 
     // Wait decay (mirrors backend: reward *= 0.9^wait)
@@ -174,8 +178,6 @@ export default function App() {
     // Hard clamp to [0.0, 1.0] — absolute guarantee
     reward = Math.max(0.0, Math.min(1.0, Math.round(reward * 100) / 100));
 
-    setLastReward({ value: reward, timestamp: Date.now() });
-    
     setLogs((prev) => {
       const newLogs = [{
         msg: logMsg, subject: email.subject, reward, action: actionType,
@@ -197,7 +199,9 @@ export default function App() {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action_type: actionType.toLowerCase(), email_id: id }),
       });
-    } catch (_) { /* Demo mode - backend sync is best-effort */ }
+    } catch {
+      // Demo mode - backend sync is best-effort
+    }
 
     if (isSpam && action === 'DELETE') {
       fetch(`${API_URL}/feedback`, { method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -234,7 +238,7 @@ export default function App() {
       }, Math.max(200, simSpeed * 0.8)); // Agent speed dynamically matches email generation rate
     } else clearInterval(autoAgentRef.current);
     return () => clearInterval(autoAgentRef.current);
-  }, [isAuto, isRunning, handleAction]);
+  }, [isAuto, isRunning, handleAction, simSpeed]);
 
   useEffect(() => {
     if (isRunning) { const id = setInterval(fetchClassifierStats, 15000); return () => clearInterval(id); }
@@ -243,7 +247,7 @@ export default function App() {
   const selectedEmail = emails.find((e) => e.id === selectedId);
 
   return (
-    <div className="flex flex-col lg:flex-row bg-surface text-on-surface overflow-hidden" style={{ fontFamily: '"Times New Roman", Times, serif', transform: 'scale(0.8)', transformOrigin: 'top left', width: '125vw', height: '125vh' }}>
+    <div className="flex flex-col lg:flex-row bg-surface text-on-surface overflow-hidden" style={{ fontFamily: '"Times New Roman", Times, serif' }}>
       
       {/* SIDEBAR - Responsive stack on mobile, 64px width on desktop */}
       <aside className="w-full lg:w-72 bg-surface-container-lowest shrink-0 lg:h-full lg:overflow-y-auto border-b lg:border-r border-slate-200 z-50 flex flex-col hide-scrollbar">
@@ -278,7 +282,7 @@ export default function App() {
               {isRunning && <span className="flex h-2 w-2 relative ml-1"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span><span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span></span>}
             </button>
             <div className="flex gap-2">
-              <button onClick={() => { setEmails([]); setScore(0); setLogs([]); setLastReward(null); }} className="flex-1 flex justify-center items-center gap-2 px-3 py-2.5 rounded-xl font-bold bg-slate-100 text-slate-500 hover:bg-slate-200 transition-colors text-xs">
+              <button onClick={() => { setEmails([]); setScore(0); setLogs([]); }} className="flex-1 flex justify-center items-center gap-2 px-3 py-2.5 rounded-xl font-bold bg-slate-100 text-slate-500 hover:bg-slate-200 transition-colors text-xs">
                 <RotateCcw size={14} /> Reset Data
               </button>
               <button onClick={() => setShowAddAccount(true)} className="flex-1 flex justify-center items-center gap-2 px-3 py-2.5 rounded-xl font-bold bg-slate-100 text-slate-500 hover:bg-slate-200 transition-colors text-xs">
@@ -311,11 +315,17 @@ export default function App() {
                   <div className="grid grid-cols-2 gap-3">
                     <div className="bg-slate-50 rounded-xl p-3 border border-slate-100">
                       <p className="text-[9px] text-slate-500 font-bold mb-1">Accuracy</p>
-                      <p className="text-lg font-headline font-black text-emerald-500">{classifierStats?.live_classifier?.accuracy ? `${Math.min(99.9, 91.62 + (logs.length * 0.01)).toFixed(2)}%` : `${(91.62 + (logs.length * 0.01)).toFixed(2)}%`}</p>
+                      <p className="text-lg font-headline font-black text-emerald-500">
+                        {classifierStats?.live_classifier?.accuracy
+                          ? `${(classifierStats.live_classifier.accuracy * 100).toFixed(2)}%`
+                          : '0.00%'}
+                      </p>
                     </div>
                     <div className="bg-slate-50 rounded-xl p-3 border border-slate-100">
                       <p className="text-[9px] text-slate-500 font-bold mb-1">Classified</p>
-                      <p className="text-lg font-headline font-black text-blue-500">{(143523 + logs.length).toLocaleString()}</p>
+                      <p className="text-lg font-headline font-black text-blue-500">
+                        {(classifierStats?.live_classifier?.total_classified || 0).toLocaleString()}
+                      </p>
                     </div>
                   </div>
                   {showStats && classifierStats?.live_classifier && (
@@ -513,7 +523,7 @@ export default function App() {
                             <span className="text-[8px] font-bold uppercase tracking-widest bg-slate-200 text-slate-500 px-1.5 py-0.5 rounded">{l.action}</span>
                           </div>
                         </div>
-                        <span className={`text-xs font-black shrink-0 ${l.reward >= 0 ? 'text-emerald-500' : 'text-red-500'}`}>{l.reward > 0 ? '+' : ''}{l.reward}</span>
+                        <span className={`text-xs font-black shrink-0 ${l.reward > 0 ? 'text-emerald-500' : 'text-red-500'}`}>{l.reward > 0 ? '+' : ''}{l.reward}</span>
                       </div>
                     ))}
                     {logs.length === 0 && <p className="text-xs text-slate-400 text-center italic mt-10">No recent triage actions</p>}

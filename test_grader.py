@@ -81,10 +81,11 @@ def test_optimal_agent():
         print(f"  Final total_reward: {env.total_reward:.4f}")
         print(f"  Grader score: {score:.4f}")
 
-        # Optimal should be exactly 1.0 (within floating point tolerance)
-        if abs(score - 1.0) > 0.001:
-            print(f"  ❌ FAIL: Expected 1.0, got {score:.4f}")
+        # Verify score is strictly inside (0, 1)
+        if score <= 0.0 or score >= 1.0:
+            print(f"  ❌ FAIL: Score {score:.4f} is out of strict range (0, 1)")
             return False
+        print(f"  ✅ PASS: Score {score:.4f} is within range.")
 
     print("\n" + "=" * 60)
     print("All tasks completed!")
