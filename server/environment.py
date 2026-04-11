@@ -211,7 +211,7 @@ class EmailEnv:
         urgency = email.get("urgency", "MEDIUM")
         sentiment = email.get("sentiment", "Professional")
 
-        #  Action-specific reward mapping 
+        #  Action-specific reward mapping
         if action_type == "delete":
             if is_spam:
                 reward = 0.4 + (0.4 * confidence)  # 0.40.8
@@ -237,16 +237,16 @@ class EmailEnv:
         else:
             reward = 0.05  # Unknown action
 
-        #  Wait Decay (multiplier, never goes negative) 
+        #  Wait Decay (multiplier, never goes negative)
         wait_steps = email.get("wait", 0)
         reward *= 0.9**wait_steps
 
-        #  Final clamp 
+        #  Final clamp
         reward = float(max(0.0, min(1.0, reward)))
         self.classifier.record_reward(reward)
         return round(reward, 4)
 
-def step(self, action: Action, timeout_s: Optional[float] = None) -> Observation:
+    def step(self, action: Action, timeout_s: Optional[float] = None) -> Observation:
         """
         Execute one step in the environment.
         Returns: Observation with reward, done status, and metadata
@@ -255,13 +255,14 @@ def step(self, action: Action, timeout_s: Optional[float] = None) -> Observation
         email_id = action.email_id
 
         target_email = next((e for e in self.inbox if e["id"] == email_id), None)
-        step_reward = 0.05  # Minimal baseline reward for participating (0.01.0 compliant)
+        step_reward = 0.05  # Minimal baseline reward for participating
 
         # Track observation telemetry for this step
         step_error_trace = None
         current_step_feedback = None
 
         if target_email:
+            # Get base reward from complex grading
             step_reward = self.complex_grader(target_email, action_type)
             if action_type in ["open", "delete", "escalate"]:
                 self.inbox = [e for e in self.inbox if e["id"] != email_id]
@@ -276,18 +277,19 @@ def step(self, action: Action, timeout_s: Optional[float] = None) -> Observation
             # Graceful System Degradation: intercept hallucinated IDs mathematically
             if email_id and email_id.lower() != "none":
                 step_error_trace = f"InvalidTargetError: Action '{action_type}' failed. Identifier '{email_id}' does not exist in inbox."
-                step_reward = 0.05  # Near-zero reward for hallucinated target
+                step_reward = 0.0  # Invalid target should give 0 reward
             else:
                 step_reward = 0.1  # Small reward for choosing to defer
                 current_step_feedback = "Deferred action; no target specified."
 
-        # Add progress-based rewards for investigative loop
+        # Add progress-based bonus BEFORE final clamp to ensure [0.0, 1.0] constraint
+        # Progress bonus scales from 0.0 (no progress) to 0.15 (complete)
         if self.initial_email_count > 0:
             progress_ratio = self.processed_emails / self.initial_email_count
-            progress_reward = progress_ratio * 0.5  # Up to 0.5 bonus for full progress
-            step_reward += progress_reward
+            progress_bonus = progress_ratio * 0.15  # Max 0.15 additional reward
+            step_reward = step_reward * (1.0 - progress_bonus * 0.3) + progress_bonus
 
-        # Clamp step_reward to [0.0, 1.0]
+        # CRITICAL: Final clamp to [0.0, 1.0] - NO INTERMEDIATE VALUES CAN EXCEED 1.0
         step_reward = float(max(0.0, min(1.0, step_reward)))
 
         # Tick wait counters for remaining emails
@@ -305,9 +307,8 @@ def step(self, action: Action, timeout_s: Optional[float] = None) -> Observation
         self.steps += 1
         done = self.steps >= self.max_steps or (len(self.inbox) == 0 and self.steps > 1)
 
-        # Completion Bonus: if done and inbox empty, add +0.5 to total_reward
-        if done and len(self.inbox) == 0:
-            self.total_reward += 0.5
+        # NOTE: Completion bonus is now handled in grader() via trajectory analysis
+        # to maintain proper normalization of individual step rewards [0.0, 1.0]
 
         obs = self._create_observation(
             reward=step_reward,
@@ -330,24 +331,45 @@ def step(self, action: Action, timeout_s: Optional[float] = None) -> Observation
 
     def grader(self) -> float:
         """
-        Min-Max normalized grader per OpenEnv Phase 2 specification.
-        Uses task-specific theoretical max to produce a [0.0, 1.0] score.
-        An optimal agent gets 1.0. A random agent gets ~0.2.
+        Normalized grader per OpenEnv Phase 2 specification.
+
+        Returns a score in [0.0, 1.0] based on episode performance:
+        - 0.0: Total failure (crashed, wrong actions)
+        - 0.1-0.9: Partial success (partial completion or delays)
+        - 1.0: Perfect success (cleared inbox with correct actions)
+
+        Each step reward is strictly [0.0, 1.0], so max achievable total is:
+        - task1: 10 steps × 1.0 = 10.0 raw total (normalized to 1.0)
+        - task2: 10 steps × 1.0 = 10.0 raw total (normalized to 1.0)
+        - task3: 10 steps × 1.0 = 10.0 raw total (normalized to 1.0)
         """
-        # Task-specific theoretical max rewards
-        TASK_BASELINES = {
-            "task1": {"min": 0.0, "max": 1.5},  # 1 email: ~0.9 + bonus
-            "task2": {"min": 0.0, "max": 4.0},  # 3 emails: ~0.8*3 + progress + bonus
-            "task3": {"min": 0.0, "max": 8.0},  # 5 emails: ~0.8*5 + progress + bonus
-        }
+        # Calculate achievement based on performance metrics
+        inbox_cleared = len(self.inbox) == 0
+        correct_actions_ratio = (
+            self.processed_emails / self.initial_email_count
+            if self.initial_email_count > 0
+            else 0.0
+        )
+        efficiency_ratio = 1.0 - (self.steps / self.max_steps)
 
-        limits = TASK_BASELINES.get(self.current_task, {"min": 0.0, "max": 3.0})
+        # Performance score: combines correctness, completion, and efficiency
+        # Base: average reward achieved
+        avg_step_reward = (
+            sum(self._episode_rewards) / len(self._episode_rewards)
+            if self._episode_rewards
+            else 0.0
+        )
 
-        if limits["max"] == limits["min"]:
-            return 0.5
+        # Compose final score
+        performance_score = (
+            avg_step_reward * 0.6  # 60% weight on action quality
+            + correct_actions_ratio * 0.25  # 25% weight on correct action ratio
+            + (efficiency_ratio if inbox_cleared else 0.0)
+            * 0.15  # 15% bonus for efficiency if cleared
+        )
 
-        score = (self.total_reward - limits["min"]) / (limits["max"] - limits["min"])
-        return float(max(0.0, min(1.0, score)))
+        # Ensure final grader output is in [0.0, 1.0]
+        return float(max(0.0, min(1.0, performance_score)))
 
     def state(self) -> State:
         """Return the current environment state."""
