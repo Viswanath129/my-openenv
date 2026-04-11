@@ -61,6 +61,7 @@ Each observation contains the current inbox state:
 | `task` | `str` | Active task identifier |
 | `max_steps` | `int` | Maximum steps allowed for the task |
 | `total_reward` | `float` | Cumulative reward so far |
+| `html_observation` | `str` | **[NEW]** Visual HTML table of the inbox for multimodal agents |
 
 **EmailItem** fields:
 | Field | Type | Description |
@@ -75,6 +76,10 @@ Each observation contains the current inbox state:
 | `spam_score` | `float` | ML spam probability (0.0–1.0) |
 | `confidence` | `float` | Overall classification confidence |
 | `wait` | `int` | Steps this email has been waiting |
+
+### 🖼️ Multimodal Support
+
+InboxIQ is future-proofed for **Vision-Language Models** (e.g., Llama-3-Vision, Qwen-2.5-VL). Every observation includes a semantically styled HTML representation of the inbox, allowing multimodal agents to "see" the priority levels and urgency through visual cues.
 
 ### Action Space
 

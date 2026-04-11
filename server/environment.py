@@ -238,9 +238,15 @@ class EmailEnv:
         elif email.get("urgency") == "HIGH" and action_type == "defer":
             reward -= 2.0
 
-        # ── Wait penalty (capped) ──
-        wait_penalty = min(0.2 * email.get("wait", 0), 4.0)
-        reward -= wait_penalty
+        # ── Wait Penalty (Decay Factor) ──
+        # Multiplier-based decay prevents total_reward from becoming excessively negative
+        # and satisfies the gradient consistency required by PPO/standard RL.
+        if reward > 0:
+            wait_steps = email.get("wait", 0)
+            reward *= (0.85 ** wait_steps)  # 15% decay per step waiting
+        elif reward < 0:
+            # Penalize delays even for poor actions
+            reward *= (1.1 ** email.get("wait", 0))
 
         self.classifier.record_reward(reward)
         return round(reward, 2)
@@ -371,6 +377,7 @@ class EmailEnv:
         info = {
             "total": round(self.total_reward, 2),
             "classifier_stats": self.classifier.stats,
+            "episode_id": getattr(self, "episode_id", "N/A")
         }
 
         if done:
@@ -389,4 +396,31 @@ class EmailEnv:
             info=info,
             error_trace=error_trace,
             step_feedback=step_feedback,
+            html_observation=self._generate_html_table()
         )
+
+    def _generate_html_table(self) -> str:
+        """Generate a visual HTML representation of the current inbox."""
+        if not self.inbox:
+            return "<p style='font-family: sans-serif; color: #666;'>Your inbox is currently empty.</p>"
+
+        html = "<table border='1' style='border-collapse: collapse; width: 100%; font-family: sans-serif; border: 1px solid #ddd;'>"
+        html += "<tr style='background-color: #f8f9fa; color: #333;'><th>ID</th><th>Sender</th><th>Subject</th><th>Urgency</th><th>Sentiment</th><th>Spam Prob</th></tr>"
+        for email in self.inbox:
+            urgency = email.get('urgency', 'LOW')
+            row_bg = "#ffffff"
+            if urgency == "HIGH":
+                row_bg = "#fff5f5"
+            elif email.get("type") == "SPAM":
+                row_bg = "#fcfcfc"
+
+            html += f"<tr style='background-color: {row_bg};'>"
+            html += f"<td style='padding: 8px;'>{email['id']}</td>"
+            html += f"<td style='padding: 8px;'>{email['sender']}</td>"
+            html += f"<td style='padding: 8px;'>{email['subject']}</td>"
+            html += f"<td style='padding: 8px;'>{urgency}</td>"
+            html += f"<td style='padding: 8px;'>{email.get('sentiment', 'Professional')}</td>"
+            html += f"<td style='padding: 8px;'>{email.get('spam_score', 0.0):.2f}</td>"
+            html += "</tr>"
+        html += "</table>"
+        return html
