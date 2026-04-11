@@ -199,57 +199,42 @@ class EmailEnv:
 
     def complex_grader(self, email: Dict, action_type: str) -> float:
         """
-        Enhanced reward function using classifier confidence.
-        Higher confidence → stronger reward signal.
-        Provides incremental feedback throughout the trajectory.
+        Native 0.0 – 1.0 reward function.
+        Strictly adheres to OpenEnv Phase 2 requirements for normalized step rewards.
         """
-        reward = 0.0
+        reward = 0.1  # Minimal baseline for participating
         is_spam = email.get("type") == "SPAM"
         if "ground_truth" in email:
             is_spam = email["ground_truth"] == 1
 
         confidence = email.get("confidence", 0.5)
-        confidence_multiplier = 0.5 + confidence  # Range: 0.5 – 1.5
-
-        # ── Core spam/ham reward ──
+        # Normalize confidence influence to keep rewards within [0, 1]
+        
+        # ── Core Action Rewards ──
         if is_spam:
             if action_type == "delete":
-                reward += 4.0 * confidence_multiplier
+                reward = 0.8 * confidence # Clean spam deletion
             else:
-                reward -= 5.0 * confidence_multiplier
+                reward = 0.05 # Failure to identify spam
         else:
             if action_type in ["open", "escalate"]:
-                reward += 2.0 * confidence_multiplier
+                reward = 0.7 * confidence
+                if action_type == "escalate" and email.get("urgency") == "HIGH":
+                    reward += 0.2 # Bonus for proper escalation
             elif action_type == "delete":
-                reward -= 6.0  # Critical error — deleting real email
-
-        # ── Sentiment bonus ──
+                reward = 0.0 # Critical Error: Deleting real mail
+        
+        # ── Sentiment Bonus (Micro-positive) ──
         if email.get("sentiment") == "Aggressive" and action_type == "escalate":
-            reward += 3.0
-        elif email.get("sentiment") == "Aggressive" and action_type not in [
-            "escalate",
-            "open",
-        ]:
-            reward -= 2.0
+            reward = min(1.0, reward + 0.1)
 
-        # ── Urgency bonus ──
-        if email.get("urgency") == "HIGH" and action_type in ["open", "escalate"]:
-            reward += 1.0
-        elif email.get("urgency") == "HIGH" and action_type == "defer":
-            reward -= 2.0
-
-        # ── Wait Penalty (Decay Factor) ──
-        # Multiplier-based decay prevents total_reward from becoming excessively negative
-        # and satisfies the gradient consistency required by PPO/standard RL.
-        if reward > 0:
-            wait_steps = email.get("wait", 0)
-            reward *= (0.85 ** wait_steps)  # 15% decay per step waiting
-        elif reward < 0:
-            # Penalize delays even for poor actions
-            reward *= (1.1 ** email.get("wait", 0))
+        # ── Wait Penalty (Multiplier Decay) ──
+        # Ensures that even a correct action is worth less if delayed
+        wait_steps = email.get("wait", 0)
+        reward *= (0.85 ** wait_steps)
 
         self.classifier.record_reward(reward)
-        return round(reward, 2)
+        return round(float(max(0.01, min(0.99, reward))), 4)
 
     def step(self, action: Action, timeout_s: Optional[float] = None) -> Observation:
         """
@@ -301,9 +286,8 @@ class EmailEnv:
                 self._get_random_email(is_train=(self.current_task != "eval"))
             )
 
-        # Normalize reward to [0.0, 1.0] range per OpenEnv specification
-        # Max possible per-step reward is around 10.0 (spam delete + bonuses)
-        normalized_reward = max(0.0, min(1.0, (step_reward + 10.0) / 20.0))
+        # Rewards are now natively [0.0, 1.0] per complex_grader
+        normalized_reward = step_reward
 
         self.total_reward += normalized_reward
         self._episode_rewards.append(normalized_reward)
@@ -314,6 +298,7 @@ class EmailEnv:
         if done and len(self.inbox) == 0:
             bonus = 0.5 # Normalized bonus
             self.total_reward += bonus
+            normalized_reward = min(1.0, normalized_reward + 0.1) # Small step nudge
 
         # Apply rubric if present
         if hasattr(self, "_apply_rubric"):
