@@ -469,14 +469,14 @@ export default function App() {
               
               {/* INSPECTOR & LOGS SIDE / BOTTOM */}
               <div className="md:col-span-12 lg:col-span-4 flex flex-col gap-6 lg:h-auto">
-                <div className="bg-gradient-to-br from-indigo-50/50 to-white border border-indigo-100 rounded-2xl p-6 lg:p-8 text-slate-800 flex flex-col min-h-[280px] shadow-sm relative overflow-hidden">
-                  <div className="relative z-10">
-                    <h3 className="font-headline text-[10px] uppercase font-black tracking-widest mb-4 flex items-center gap-2 text-primary">
+                <div className="bg-gradient-to-br from-indigo-50/50 to-white border border-indigo-100 rounded-2xl p-6 lg:p-8 text-slate-800 flex flex-col min-h-[320px] shadow-sm relative overflow-hidden">
+                  <div className="relative z-10 flex-1 flex flex-col h-full">
+                    <h3 className="font-headline text-[10px] uppercase font-black tracking-widest mb-4 flex items-center gap-2 text-primary shrink-0">
                       <span className="material-symbols-outlined text-sm">troubleshoot</span> Action Inspector
                     </h3>
                     {selectedEmail ? (
-                      <div className="flex flex-col h-full">
-                        <div className="mb-4">
+                      <div className="flex flex-col flex-1 min-h-0">
+                        <div className="mb-4 shrink-0">
                           <span className={`text-[9px] font-black uppercase mr-2 px-1.5 py-0.5 rounded ${selectedEmail.type?.toUpperCase() === 'SPAM' ? 'bg-red-100 text-red-600' : 'bg-blue-100 text-blue-600'}`}>{(selectedEmail.type || 'WORK')}</span>
                           <span className="text-[9px] font-black uppercase tracking-widest bg-slate-200 px-1.5 py-0.5 rounded text-slate-700">{selectedEmail.urgency} URGENCY</span>
                         </div>
