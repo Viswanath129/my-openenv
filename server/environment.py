@@ -333,49 +333,23 @@ class EmailEnv:
 
     def grader(self) -> float:
         """
-        Normalized grader per OpenEnv Phase 2 specification.
+        Normalized grader per OpenEnv/Scaler requirements.
 
-        Returns a score in [0.0, 1.0] based on episode performance:
-        - 0.0: Total failure (crashed, wrong actions)
-        - 0.1-0.9: Partial success (partial completion or delays)
-        - 1.0: Perfect success (cleared inbox with correct actions)
-
-        Each step reward is strictly [0.0, 1.0], so max achievable total is:
-        - task1: 10 steps × 1.0 = 10.0 raw total (normalized to 1.0)
-        - task2: 10 steps × 1.0 = 10.0 raw total (normalized to 1.0)
-        - task3: 10 steps × 1.0 = 10.0 raw total (normalized to 1.0)
+        Maps total_reward to a [0.0, 1.0] score using per-task
+        theoretical maxima. Negative totals are treated as failure (0.0).
         """
-        # Guard against uninitialized max_steps
-        if self.max_steps <= 0:
+        task_benchmarks = {
+            "task1": 1.35,  # 1 email + completion bonus - minimal step cost
+            "task2": 3.05,  # 3 emails + completion bonus - minimal step cost
+            "task3": 7.00,  # dynamic arrivals approx.
+        }
+
+        r_max = task_benchmarks.get(self.current_task, 1.0)
+        if r_max <= 0.0:
             return 0.0
 
-        # Calculate achievement based on performance metrics
-        inbox_cleared = len(self.inbox) == 0
-        correct_actions_ratio = (
-            self.processed_emails / self.initial_email_count
-            if self.initial_email_count > 0
-            else 0.0
-        )
-        efficiency_ratio = max(0.0, 1.0 - (self.steps / self.max_steps))
-
-        # Performance score: combines correctness, completion, and efficiency
-        # Base: average reward achieved
-        avg_step_reward = (
-            sum(self._episode_rewards) / len(self._episode_rewards)
-            if self._episode_rewards
-            else 0.0
-        )
-
-        # Compose final score
-        performance_score = (
-            avg_step_reward * 0.6  # 60% weight on action quality
-            + correct_actions_ratio * 0.25  # 25% weight on correct action ratio
-            + (efficiency_ratio if inbox_cleared else 0.0)
-            * 0.15  # 15% bonus for efficiency if cleared
-        )
-
-        # Ensure final grader output is in [0.0, 1.0]
-        return float(max(0.0, min(1.0, performance_score)))
+        normalized = self.total_reward / r_max
+        return float(max(0.0, min(1.0, normalized)))
 
     def state(self) -> State:
         """Return the current environment state."""
